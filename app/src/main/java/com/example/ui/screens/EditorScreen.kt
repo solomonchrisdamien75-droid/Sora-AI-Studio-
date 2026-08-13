@@ -37,7 +37,9 @@ fun EditorScreen(viewModel: SoraMainViewModel) {
     var selectedResolution by remember { mutableStateOf(ExportResolution.RES_1080P) }
     val latestExport by viewModel.latestExportedResult.collectAsState()
 
-    var activeSubToolTab by remember { mutableStateOf("VELOCITY") } // VELOCITY, AI_EFFECTS, TRANSITIONS, SUBTITLES, AUDIO_VOICE, CUTOUT
+    val activeSelectedClip = project.videoClips.find { it.id == selectedClip?.id } ?: project.videoClips.firstOrNull()
+
+    var activeSubToolTab by remember { mutableStateOf("VELOCITY") } // DURATION, FRAMES, VELOCITY, AI_EFFECTS, TRANSITIONS, SUBTITLES, AUDIO_VOICE, CUTOUT
 
     LazyColumn(
         modifier = Modifier
@@ -192,7 +194,7 @@ fun EditorScreen(viewModel: SoraMainViewModel) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(text = "Canvas Canvas Framing Ratio", fontSize = 11.sp, color = TextSecondary)
+                    Text(text = "Canvas Framing Ratio", fontSize = 11.sp, color = TextSecondary)
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         RatioChip("9:16 Shorts", AspectRatioPreset.RATIO_9_16, selectedRatio) { selectedRatio = AspectRatioPreset.RATIO_9_16 }
@@ -210,6 +212,17 @@ fun EditorScreen(viewModel: SoraMainViewModel) {
                     }
                 }
             }
+        }
+
+        // Dedicated Interactive Timeline Studio Component
+        item {
+            TimelineEditorView(
+                project = project,
+                selectedClip = activeSelectedClip,
+                onSelectClip = { selectedClip = it },
+                viewModel = viewModel,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
 
         // Track Clips List
@@ -317,9 +330,9 @@ fun EditorScreen(viewModel: SoraMainViewModel) {
         }
 
         // CapCut Editing Tool Suite for Selected Clip
-        if (selectedClip != null) {
+        if (activeSelectedClip != null) {
             item {
-                val clip = selectedClip!!
+                val clip = activeSelectedClip
 
                 SoraGlassCard(borderColor = ElectricPink) {
                     Text(text = "CapCut Tool Suite: ${clip.title}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = ElectricPink)
@@ -368,6 +381,22 @@ fun EditorScreen(viewModel: SoraMainViewModel) {
 
                     // Sub-Tool Category Selector Bar
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        item {
+                            FilterChip(
+                                selected = activeSubToolTab == "DURATION",
+                                onClick = { activeSubToolTab = "DURATION" },
+                                label = { Text("⏱️ Duration", fontSize = 11.sp) },
+                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = ElectricPink, selectedLabelColor = Color.White)
+                            )
+                        }
+                        item {
+                            FilterChip(
+                                selected = activeSubToolTab == "FRAMES",
+                                onClick = { activeSubToolTab = "FRAMES" },
+                                label = { Text("🎞️ Frames", fontSize = 11.sp) },
+                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = ElectricPink, selectedLabelColor = Color.White)
+                            )
+                        }
                         item {
                             FilterChip(
                                 selected = activeSubToolTab == "VELOCITY",
@@ -430,6 +459,19 @@ fun EditorScreen(viewModel: SoraMainViewModel) {
 
                     // Tab Content
                     when (activeSubToolTab) {
+                        "DURATION" -> {
+                            ClipDurationAdjusterPanel(
+                                clip = clip,
+                                viewModel = viewModel
+                            )
+                        }
+
+                        "FRAMES" -> {
+                            FrameSequenceFilmstrip(
+                                clip = clip,
+                                viewModel = viewModel
+                            )
+                        }
                         "VELOCITY" -> {
                             Text(text = "Smooth Speed Ramping & Velocity Curves:", fontSize = 11.sp, color = TextSecondary)
                             Spacer(modifier = Modifier.height(4.dp))

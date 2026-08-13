@@ -1,5 +1,15 @@
 package com.example.editor
 
+data class VideoFrameItem(
+    val id: String,
+    val frameIndex: Int,
+    val timestampMs: Long,
+    val label: String = "Frame",
+    val visualHue: Float = 180f,
+    val isKeyframe: Boolean = false,
+    val captionSnippet: String? = null
+)
+
 data class MediaClipTrack(
     val id: String,
     val title: String,
@@ -21,7 +31,8 @@ data class MediaClipTrack(
     val bgRemovalCutout: Boolean = false,
     val canvasBackground: String = "BLUR", // BLUR, CYBER_NEON, OBSIDIAN_BLACK, SUNSET_GLOW
     val removeWatermark: Boolean = false,
-    val watermarkMethod: String = "AI_INPAINT_ERASER" // AI_INPAINT_ERASER, EDGE_CROP, SMART_BLUR_MASK
+    val watermarkMethod: String = "AI_INPAINT_ERASER", // AI_INPAINT_ERASER, EDGE_CROP, SMART_BLUR_MASK
+    val frames: List<VideoFrameItem> = emptyList()
 )
 
 enum class AspectRatioPreset(val label: String, val widthRatio: Int, val heightRatio: Int) {
@@ -53,16 +64,37 @@ data class VideoEditorProject(
 
 class VideoEditorEngine {
 
+    fun generateDefaultFramesForClip(clipId: String, durationMs: Long, title: String): List<VideoFrameItem> {
+        val frameCount = maxOf(3, minOf(8, (durationMs / 800).toInt() + 1))
+        val stepMs = if (frameCount > 1) durationMs / (frameCount - 1) else durationMs
+        val baseHue = (clipId.hashCode() % 360).let { if (it < 0) it + 360 else it }.toFloat()
+        return (0 until frameCount).map { i ->
+            val frameTs = i * stepMs
+            VideoFrameItem(
+                id = "${clipId}_f$i",
+                frameIndex = i + 1,
+                timestampMs = frameTs,
+                label = "F${i + 1} (${frameTs / 1000}.${(frameTs % 1000) / 100}s)",
+                visualHue = (baseHue + i * 32f) % 360f,
+                isKeyframe = i == 0 || i == frameCount - 1 || i == frameCount / 2
+            )
+        }
+    }
+
     fun splitClip(clip: MediaClipTrack, splitAtMs: Long): Pair<MediaClipTrack, MediaClipTrack> {
+        val part1Duration = splitAtMs - clip.startMs
+        val part2Duration = clip.endMs - splitAtMs
         val clip1 = clip.copy(
             id = "${clip.id}_part1",
             endMs = splitAtMs,
-            durationMs = splitAtMs - clip.startMs
+            durationMs = part1Duration,
+            frames = generateDefaultFramesForClip("${clip.id}_part1", part1Duration, clip.title)
         )
         val clip2 = clip.copy(
             id = "${clip.id}_part2",
             startMs = splitAtMs,
-            durationMs = clip.endMs - splitAtMs
+            durationMs = part2Duration,
+            frames = generateDefaultFramesForClip("${clip.id}_part2", part2Duration, clip.title)
         )
         return Pair(clip1, clip2)
     }

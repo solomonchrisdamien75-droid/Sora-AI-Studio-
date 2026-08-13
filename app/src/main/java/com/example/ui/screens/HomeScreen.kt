@@ -36,6 +36,8 @@ fun HomeScreen(viewModel: SoraMainViewModel) {
     val hardware by viewModel.hardwareProfile.collectAsState()
     val models by viewModel.downloadedModels.collectAsState()
     val gallery by viewModel.galleryItems.collectAsState()
+    val queuedJobs by viewModel.queuedJobs.collectAsState()
+    val isQueueProcessing by viewModel.isQueueProcessing.collectAsState()
 
     LazyColumn(
         modifier = Modifier
@@ -65,6 +67,50 @@ fun HomeScreen(viewModel: SoraMainViewModel) {
                     )
                 }
                 StatusIndicator(isConnected = true)
+            }
+        }
+
+        // Active Task Queue Status Banner (if tasks are queued)
+        if (queuedJobs.isNotEmpty()) {
+            item {
+                SoraGlassCard(borderColor = if (isQueueProcessing) AccentGreen else NeonPurple) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Queue,
+                                contentDescription = "Queue",
+                                tint = if (isQueueProcessing) AccentGreen else NeonPurple,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "Task Queue (${queuedJobs.size} Jobs Pending)",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary
+                                )
+                                Text(
+                                    text = if (isQueueProcessing) "Sequential worker rendering in background..." else "Batch tasks ready for offline sequential rendering",
+                                    fontSize = 11.sp,
+                                    color = if (isQueueProcessing) AccentGreen else TextSecondary
+                                )
+                            }
+                        }
+
+                        Button(
+                            onClick = { viewModel.selectTab(SoraTab.QUEUE) },
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonPurple),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Manage Queue", color = DeepDarkBg, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
             }
         }
 
@@ -137,16 +183,25 @@ fun HomeScreen(viewModel: SoraMainViewModel) {
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 QuickActionCard(
-                    title = "Text to Video",
+                    title = "Workbench",
                     icon = Icons.Default.VideoCall,
                     color = NeonCyan,
                     modifier = Modifier.weight(1f).testTag("quick_text_to_video"),
                     onClick = {
                         viewModel.updateGenerationType("TEXT_TO_VIDEO")
                         viewModel.selectTab(SoraTab.GENERATE)
+                    }
+                )
+                QuickActionCard(
+                    title = "Task Queue",
+                    icon = Icons.Default.Queue,
+                    color = AccentGreen,
+                    modifier = Modifier.weight(1f).testTag("quick_task_queue"),
+                    onClick = {
+                        viewModel.selectTab(SoraTab.QUEUE)
                     }
                 )
                 QuickActionCard(
@@ -160,7 +215,7 @@ fun HomeScreen(viewModel: SoraMainViewModel) {
                     }
                 )
                 QuickActionCard(
-                    title = "AI Assistant",
+                    title = "Assistant",
                     icon = Icons.Default.Psychology,
                     color = NeonPurple,
                     modifier = Modifier.weight(1f).testTag("quick_assistant"),

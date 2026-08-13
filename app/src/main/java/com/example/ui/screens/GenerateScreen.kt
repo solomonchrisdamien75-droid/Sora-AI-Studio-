@@ -14,6 +14,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -22,20 +27,20 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.GalleryItemEntity
 import com.example.ui.SoraMainViewModel
 import com.example.ui.SoraTab
 import com.example.ui.components.*
 import com.example.ui.theme.*
-
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.collectAsState
-import com.example.data.GalleryItemEntity
 
 @Composable
 fun GenerateScreen(viewModel: SoraMainViewModel) {
     val form by viewModel.generationForm.collectAsState()
     val activeJob by viewModel.activeJob.collectAsState()
     val latestResult by viewModel.latestGeneratedResult.collectAsState()
+    val queuedJobs by viewModel.queuedJobs.collectAsState()
+    val isQueueProcessing by viewModel.isQueueProcessing.collectAsState()
+    var showBatchDialog by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier
@@ -50,6 +55,53 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
                 subtitle = "Configure generation mode and parameters",
                 icon = Icons.Default.VideoCall
             )
+        }
+
+        // Task Queue Live Quick Monitor Banner
+        if (queuedJobs.isNotEmpty()) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(NeonPurple.copy(alpha = 0.15f))
+                        .border(1.dp, NeonPurple, RoundedCornerShape(10.dp))
+                        .padding(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(imageVector = Icons.Default.Queue, contentDescription = null, tint = NeonPurple, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "Task Queue: ${queuedJobs.size} job(s) pending",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary
+                                )
+                                Text(
+                                    text = if (isQueueProcessing) "Sequential worker rendering in background..." else "Queue ready for sequential processing",
+                                    fontSize = 11.sp,
+                                    color = if (isQueueProcessing) AccentGreen else TextSecondary
+                                )
+                            }
+                        }
+
+                        Button(
+                            onClick = { viewModel.selectTab(SoraTab.QUEUE) },
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonPurple),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Text("Open Queue", color = DeepDarkBg, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
         }
 
         // Output Generation Result Preview Card (Appears instantly on completion)
@@ -808,17 +860,56 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
             }
         }
 
-        // Launch Button
+        // Launch & Queue Action Buttons
         item {
             Spacer(modifier = Modifier.height(8.dp))
             SoraGradientButton(
-                text = if (form.isGenerating) "Generation In Progress..." else "START AI GENERATION",
+                text = if (form.isGenerating) "Generation In Progress..." else "START IMMEDIATE GENERATION",
                 icon = Icons.Default.PlayArrow,
                 enabled = !form.isGenerating,
                 modifier = Modifier.fillMaxWidth().testTag("start_generation_button"),
                 onClick = { viewModel.startGeneration() }
             )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedButton(
+                    onClick = { viewModel.addCurrentFormToQueue() },
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonCyan),
+                    modifier = Modifier.weight(1f).testTag("add_to_queue_button")
+                ) {
+                    Icon(imageVector = Icons.Default.AddToQueue, contentDescription = null, modifier = Modifier.size(16.dp), tint = NeonCyan)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Add to Queue", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+
+                Button(
+                    onClick = { showBatchDialog = true },
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = NeonPurple),
+                    modifier = Modifier.weight(1f).testTag("batch_queue_dialog_button")
+                ) {
+                    Icon(imageVector = Icons.Default.PlaylistAdd, contentDescription = null, modifier = Modifier.size(16.dp), tint = DeepDarkBg)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Batch Queue Jobs", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DeepDarkBg)
+                }
+            }
         }
+    }
+
+    if (showBatchDialog) {
+        BatchJobCreatorDialog(
+            onDismiss = { showBatchDialog = false },
+            onBatchQueue = { prefix, prompts, mode, duration, res, fps ->
+                viewModel.addBatchJobsToQueue(prefix, prompts, "TEXT_TO_VIDEO", mode, duration, res, fps)
+                showBatchDialog = false
+            }
+        )
     }
 }
 

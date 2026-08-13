@@ -8,17 +8,22 @@ import com.example.ai.hardware.DeviceHardwareProfile
 import com.example.ai.hardware.HardwareDetector
 import com.example.ai.inference.InferenceEngineManager
 import com.example.ai.inference.InferenceProgress
+import com.example.ai.queue.TaskQueueManager
 import com.example.ai.server.LocalApiServer
 import com.example.cloud.SoraCloudClient
 import com.example.editor.VideoEditorEngine
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 class SoraRepository(
     private val context: Context,
-    private val db: AppDatabase
+    private val db: AppDatabase,
+    private val repoScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+    onJobFinished: (GalleryItemEntity) -> Unit = {}
 ) {
     val aiModelDao = db.aiModelDao()
     val generationJobDao = db.generationJobDao()
@@ -34,6 +39,7 @@ class SoraRepository(
     val offlineAssistantEngine = OfflineAssistantEngine(context, aiModelDao)
     val videoEditorEngine = VideoEditorEngine()
     val soraCloudClient = SoraCloudClient(soraCloudDao)
+    val taskQueueManager = TaskQueueManager(generationJobDao, galleryDao, inferenceEngineManager, repoScope, onJobFinished)
 
     fun getDeviceHardwareProfile(): DeviceHardwareProfile {
         return hardwareDetector.getDeviceProfile()

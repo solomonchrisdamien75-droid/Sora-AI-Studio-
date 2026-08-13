@@ -9,8 +9,7 @@ import com.example.ai.downloader.HuggingFaceModelInfo
 import com.example.ai.hardware.DeviceHardwareProfile
 import com.example.cloud.CloudJobResponse
 import com.example.data.*
-import com.example.editor.MediaClipTrack
-import com.example.editor.VideoEditorProject
+import com.example.editor.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -18,6 +17,7 @@ import kotlinx.coroutines.launch
 enum class SoraTab(val title: String, val route: String) {
     HOME("Home", "home"),
     GENERATE("Generate", "generate"),
+    QUEUE("Task Queue", "queue"),
     MODELS("Models", "models"),
     DOWNLOADS("Downloads", "downloads"),
     GALLERY("Gallery", "gallery"),
@@ -37,6 +37,22 @@ data class ManhwaPanelItem(
     val spokenDialogue: String? = "I am the Shadow Monarch!"
 )
 
+data class ChatAttachment(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val uri: String,
+    val fileName: String,
+    val mimeType: String,
+    val fileSizeBytes: Long = 0L,
+    val type: AttachmentType = AttachmentType.FILE
+)
+
+enum class AttachmentType {
+    IMAGE,
+    PDF,
+    DOCUMENT,
+    FILE
+}
+
 data class ChatMessage(
     val id: String = java.util.UUID.randomUUID().toString(),
     val sender: String, // "USER" or "AI"
@@ -44,7 +60,8 @@ data class ChatMessage(
     val timestamp: Long = System.currentTimeMillis(),
     val actionType: String? = null, // "OPEN_YOUTUBE", "SET_TIMER", "MANHWA_RECAP", "NAVIGATE_GENERATE"
     val actionTitle: String? = null,
-    val isExecuted: Boolean = false
+    val isExecuted: Boolean = false,
+    val attachments: List<ChatAttachment> = emptyList()
 )
 
 data class ActiveTimer(
@@ -131,7 +148,7 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
     val isAssistantLoading: StateFlow<Boolean> = _isAssistantLoading.asStateFlow()
 
     // Video Editor state
-    private val _editorProject = MutableStateFlow(VideoEditorProject(id = "p1", name = "Sora Film Project 01"))
+    private val _editorProject = MutableStateFlow(createInitialEditorProject())
     val editorProject: StateFlow<VideoEditorProject> = _editorProject.asStateFlow()
 
     // Virtual RAM & Workspace mode
@@ -155,11 +172,26 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
         listOf(
             ChatMessage(
                 sender = "AI",
-                text = "👋 Hello! I am your AI Assistant. You can chat with me naturally and tell me to do phone actions like:\n• ▶️ 'Open YouTube'\n• ⏱️ 'Set timer for 5 minutes'\n• 📖 'Create manhwa recap'\n• 🎬 'Write sci-fi movie script'\n• ⚙️ 'Check system status'"
+                text = "👋 Hello! I am your AI Assistant. You can upload images, PDF documents, and files here, or ask me to perform device actions like:\n• 📎 Upload photos & generate video scripts\n• 📄 Upload PDFs for AI summary & breakdown\n• ▶️ 'Open YouTube'\n• ⏱️ 'Set timer for 5 minutes'\n• 📖 'Create manhwa recap'\n• 🎬 'Write sci-fi movie script'"
             )
         )
     )
     val chatMessages: StateFlow<List<ChatMessage>> = _chatMessages.asStateFlow()
+
+    private val _stagedChatAttachments = MutableStateFlow<List<ChatAttachment>>(emptyList())
+    val stagedChatAttachments: StateFlow<List<ChatAttachment>> = _stagedChatAttachments.asStateFlow()
+
+    fun addChatAttachment(attachment: ChatAttachment) {
+        _stagedChatAttachments.value = _stagedChatAttachments.value + attachment
+    }
+
+    fun removeChatAttachment(attachmentId: String) {
+        _stagedChatAttachments.value = _stagedChatAttachments.value.filterNot { it.id == attachmentId }
+    }
+
+    fun clearStagedChatAttachments() {
+        _stagedChatAttachments.value = emptyList()
+    }
 
     private val _activeTimers = MutableStateFlow<List<ActiveTimer>>(emptyList())
     val activeTimers: StateFlow<List<ActiveTimer>> = _activeTimers.asStateFlow()
@@ -178,7 +210,12 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
 
     init {
         val database = AppDatabase.getDatabase(application)
-        repository = SoraRepository(application, database)
+        repository = SoraRepository(
+            context = application,
+            db = database,
+            repoScope = viewModelScope,
+            onJobFinished = { _latestGeneratedResult.value = it }
+        )
 
         viewModelScope.launch {
             repository.initializeDefaultData()
@@ -195,6 +232,18 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
 
     val allJobs: StateFlow<List<GenerationJobEntity>> = repository.generationJobDao.getAllJobs()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val queuedJobs: StateFlow<List<GenerationJobEntity>> = repository.generationJobDao.getQueuedJobs()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val isQueueProcessing: StateFlow<Boolean> = repository.taskQueueManager.isQueueProcessing
+    val isAutoProcessEnabled: StateFlow<Boolean> = repository.taskQueueManager.isAutoProcessEnabled
+    val currentRunningJobId: StateFlow<String?> = repository.taskQueueManager.currentRunningJobId
+    val queueStatusMessage: StateFlow<String?> = repository.taskQueueManager.statusMessage
+
+    fun dismissQueueStatusMessage() {
+        repository.taskQueueManager.clearStatusMessage()
+    }
 
     val activeJob: StateFlow<GenerationJobEntity?> = repository.generationJobDao.getActiveJob()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -559,16 +608,65 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
         _activeTimers.value = _activeTimers.value.filterNot { it.id == timerId }
     }
 
-    fun sendChatMessage(userText: String) {
-        if (userText.isBlank()) return
+    fun sendChatMessage(userText: String, attachments: List<ChatAttachment> = emptyList()) {
+        if (userText.isBlank() && attachments.isEmpty()) return
         
-        val userMsg = ChatMessage(sender = "USER", text = userText)
+        val userMsg = ChatMessage(
+            sender = "USER",
+            text = if (userText.isNotBlank()) userText else "📎 Attached ${attachments.size} file(s)",
+            attachments = attachments
+        )
         _chatMessages.value = _chatMessages.value + userMsg
+        clearStagedChatAttachments()
 
         val lower = userText.lowercase()
 
         viewModelScope.launch {
             kotlinx.coroutines.delay(600) // Realistic AI processing delay
+
+            // Check if attachments were uploaded first
+            if (attachments.isNotEmpty()) {
+                val hasImage = attachments.any { it.type == AttachmentType.IMAGE }
+                val hasPdf = attachments.any { it.type == AttachmentType.PDF }
+                val fileNames = attachments.joinToString(", ") { it.fileName }
+
+                val replyText = buildString {
+                    append("📁 **Processed ${attachments.size} Attachment(s):**\n")
+                    attachments.forEach { att ->
+                        when (att.type) {
+                            AttachmentType.IMAGE -> {
+                                append("• 🖼️ **${att.fileName}**: Image recognized. Ready for Image-to-Video reference framing or visual storyboard.\n")
+                                // Also update generation form source image if applicable
+                                updateSourceImageUri(att.uri)
+                            }
+                            AttachmentType.PDF -> {
+                                append("• 📄 **${att.fileName}**: PDF document parsed. Script structure, scenes, and character notes extracted into memory.\n")
+                            }
+                            else -> {
+                                append("• 📁 **${att.fileName}**: File loaded into project workspace context.\n")
+                            }
+                        }
+                    }
+                    if (userText.isNotBlank()) {
+                        append("\n💡 **Regarding your prompt:** \"$userText\"\n")
+                    }
+                    if (hasImage) {
+                        append("\nI've assigned your uploaded image as the active keyframe reference for Sora generation!")
+                    } else if (hasPdf) {
+                        append("\nI can convert this document into a cinematic storyboard, generate video scenes, or extract character dialogue.")
+                    }
+                }
+
+                val aiMsg = ChatMessage(
+                    sender = "AI",
+                    text = replyText,
+                    actionType = if (hasImage) "NAVIGATE_GENERATE" else null,
+                    actionTitle = if (hasImage) "Use Image in Generator" else null,
+                    isExecuted = true
+                )
+                _chatMessages.value = _chatMessages.value + aiMsg
+                return@launch
+            }
 
             when {
                 // Command: Open YouTube
@@ -658,7 +756,7 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
                 else -> {
                     val aiMsg = ChatMessage(
                         sender = "AI",
-                        text = "🤖 I can execute device actions for you! Try saying:\n• 'Open YouTube'\n• 'Set timer for 5 minutes'\n• 'Create manhwa recap for Solo Hunter'\n• 'Generate video of neon futuristic city'"
+                        text = "🤖 I can execute device actions and analyze your files! Try uploading images/PDFs or asking:\n• 'Open YouTube'\n• 'Set timer for 5 minutes'\n• 'Create manhwa recap for Solo Hunter'\n• 'Generate video of neon futuristic city'"
                     )
                     _chatMessages.value = _chatMessages.value + aiMsg
                 }
@@ -719,6 +817,77 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun addCurrentFormToQueue() {
+        val form = _generationForm.value
+        viewModelScope.launch {
+            repository.taskQueueManager.enqueueSingleJob(
+                title = form.title,
+                prompt = form.prompt,
+                generationType = form.generationType,
+                mode = form.mode,
+                durationSec = form.durationSec,
+                resolution = form.resolution,
+                fps = form.fps
+            )
+        }
+    }
+
+    fun addBatchJobsToQueue(
+        prefix: String,
+        prompts: List<String>,
+        type: String = "TEXT_TO_VIDEO",
+        mode: String = "FAST",
+        durationSec: Int = 5,
+        resolution: String = "1080p",
+        fps: Int = 24
+    ) {
+        viewModelScope.launch {
+            repository.taskQueueManager.enqueueBatch(
+                com.example.ai.queue.BatchJobCreationRequest(
+                    titlePrefix = prefix,
+                    prompts = prompts,
+                    generationType = type,
+                    mode = mode,
+                    durationSeconds = durationSec,
+                    resolution = resolution,
+                    fps = fps
+                )
+            )
+        }
+    }
+
+    fun startQueueProcessing() {
+        repository.taskQueueManager.startProcessing()
+    }
+
+    fun pauseQueueProcessing() {
+        repository.taskQueueManager.pauseProcessing()
+    }
+
+    fun toggleAutoProcessQueue(enabled: Boolean) {
+        repository.taskQueueManager.setAutoProcess(enabled)
+    }
+
+    fun cancelQueuedJob(jobId: String) {
+        repository.taskQueueManager.cancelJob(jobId)
+    }
+
+    fun retryQueuedJob(jobId: String) {
+        repository.taskQueueManager.retryJob(jobId)
+    }
+
+    fun deleteQueuedJob(jobId: String) {
+        repository.taskQueueManager.deleteJob(jobId)
+    }
+
+    fun clearCompletedJobs() {
+        repository.taskQueueManager.clearCompletedJobs()
+    }
+
+    fun moveQueuedJob(jobId: String, moveUp: Boolean) {
+        repository.taskQueueManager.moveJob(jobId, moveUp)
+    }
+
     fun cancelActiveJob(jobId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val active = repository.generationJobDao.getJobById(jobId)
@@ -737,13 +906,75 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun downloadHuggingFaceModel(model: HuggingFaceModelInfo) {
+        downloadHuggingFaceModelWithLocation(model, "INTERNAL")
+    }
+
+    fun downloadHuggingFaceModelWithLocation(
+        model: HuggingFaceModelInfo,
+        storageType: String = "INTERNAL",
+        customPath: String? = null
+    ) {
         viewModelScope.launch {
-            repository.modelDownloadManager.startDownload(model).collect { state ->
+            repository.modelDownloadManager.startDownload(model, customPath, storageType).collect { state ->
                 _downloadingState.value = state
                 if (state.isFinished) {
                     _downloadingState.value = null
+                    _settingsStatusMessage.value = "Successfully downloaded ${model.name} to ${state.storageLocationLabel}"
                 }
             }
+        }
+    }
+
+    fun downloadModelEntityWithLocation(
+        model: AiModelEntity,
+        storageType: String = "INTERNAL",
+        customPath: String? = null
+    ) {
+        viewModelScope.launch {
+            repository.modelDownloadManager.startModelEntityDownload(model, customPath, storageType).collect { state ->
+                _downloadingState.value = state
+                if (state.isFinished) {
+                    _downloadingState.value = null
+                    _settingsStatusMessage.value = "Successfully downloaded ${model.name} to ${state.storageLocationLabel}"
+                }
+            }
+        }
+    }
+
+    fun importCustomModelFromStorage(
+        name: String,
+        format: String,
+        modelType: String,
+        ramMb: Int,
+        localPath: String,
+        storageSource: String,
+        customDesc: String? = null
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val modelId = "custom_${System.currentTimeMillis()}"
+            val entity = AiModelEntity(
+                id = modelId,
+                name = name.ifBlank { "Imported Model" },
+                modelType = modelType.ifBlank { "VIDEO" },
+                format = format.uppercase().ifBlank { "GGUF" },
+                sizeBytes = 1024L * 1024L * 1024L * 2L,
+                ramRequiredMb = ramMb.coerceAtLeast(512),
+                isDownloaded = true,
+                localPath = localPath,
+                sourceUrl = null,
+                description = customDesc ?: "Manually imported from $storageSource (${localPath.takeLast(30)})"
+            )
+            repository.modelDownloadManager.importManualModel(entity)
+            _settingsStatusMessage.value = "Imported model '$name' successfully from $storageSource"
+        }
+    }
+
+    fun deleteOrUnloadModel(modelId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (activeLoadedModel.value?.id == modelId) {
+                unloadActiveModel()
+            }
+            repository.aiModelDao.deleteModelById(modelId)
         }
     }
 
@@ -762,16 +993,248 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
 
     fun addClipToEditor(filePath: String, title: String) {
         val current = _editorProject.value
+        val durationMs = 5000L
+        val clipId = "clip_${System.currentTimeMillis()}"
+        val engine = VideoEditorEngine()
         val newClip = MediaClipTrack(
-            id = "clip_${System.currentTimeMillis()}",
+            id = clipId,
             title = title,
             filePath = filePath,
             startMs = 0L,
-            endMs = 5000L,
-            durationMs = 5000L
+            endMs = durationMs,
+            durationMs = durationMs,
+            frames = engine.generateDefaultFramesForClip(clipId, durationMs, title)
         )
         val updatedList = current.videoClips.toMutableList().apply { add(newClip) }
         _editorProject.value = current.copy(videoClips = updatedList)
+    }
+
+    fun moveClipLeft(clipId: String) {
+        val current = _editorProject.value
+        val index = current.videoClips.indexOfFirst { it.id == clipId }
+        if (index > 0) {
+            val list = current.videoClips.toMutableList()
+            val item = list.removeAt(index)
+            list.add(index - 1, item)
+            _editorProject.value = current.copy(videoClips = list)
+        }
+    }
+
+    fun moveClipRight(clipId: String) {
+        val current = _editorProject.value
+        val index = current.videoClips.indexOfFirst { it.id == clipId }
+        if (index in 0 until current.videoClips.lastIndex) {
+            val list = current.videoClips.toMutableList()
+            val item = list.removeAt(index)
+            list.add(index + 1, item)
+            _editorProject.value = current.copy(videoClips = list)
+        }
+    }
+
+    fun reorderClips(fromIndex: Int, toIndex: Int) {
+        val current = _editorProject.value
+        if (fromIndex in current.videoClips.indices && toIndex in current.videoClips.indices && fromIndex != toIndex) {
+            val list = current.videoClips.toMutableList()
+            val item = list.removeAt(fromIndex)
+            list.add(toIndex, item)
+            _editorProject.value = current.copy(videoClips = list)
+        }
+    }
+
+    fun updateClipDuration(clipId: String, newDurationMs: Long) {
+        val clampedDuration = maxOf(500L, minOf(30000L, newDurationMs))
+        val current = _editorProject.value
+        val engine = VideoEditorEngine()
+        val updatedClips = current.videoClips.map { clip ->
+            if (clip.id == clipId) {
+                clip.copy(
+                    durationMs = clampedDuration,
+                    endMs = clip.startMs + clampedDuration,
+                    frames = engine.generateDefaultFramesForClip(clip.id, clampedDuration, clip.title)
+                )
+            } else clip
+        }
+        _editorProject.value = current.copy(videoClips = updatedClips)
+    }
+
+    fun adjustClipDurationBy(clipId: String, deltaMs: Long) {
+        val current = _editorProject.value
+        val clip = current.videoClips.find { it.id == clipId } ?: return
+        updateClipDuration(clipId, clip.durationMs + deltaMs)
+    }
+
+    fun trimClipStart(clipId: String, trimMs: Long) {
+        val current = _editorProject.value
+        val engine = VideoEditorEngine()
+        val updatedClips = current.videoClips.map { clip ->
+            if (clip.id == clipId) {
+                val newStart = minOf(clip.endMs - 500L, clip.startMs + trimMs)
+                val newDuration = clip.endMs - newStart
+                clip.copy(
+                    startMs = newStart,
+                    durationMs = newDuration,
+                    frames = engine.generateDefaultFramesForClip(clip.id, newDuration, clip.title)
+                )
+            } else clip
+        }
+        _editorProject.value = current.copy(videoClips = updatedClips)
+    }
+
+    fun trimClipEnd(clipId: String, trimMs: Long) {
+        val current = _editorProject.value
+        val engine = VideoEditorEngine()
+        val updatedClips = current.videoClips.map { clip ->
+            if (clip.id == clipId) {
+                val newEnd = maxOf(clip.startMs + 500L, clip.endMs - trimMs)
+                val newDuration = newEnd - clip.startMs
+                clip.copy(
+                    endMs = newEnd,
+                    durationMs = newDuration,
+                    frames = engine.generateDefaultFramesForClip(clip.id, newDuration, clip.title)
+                )
+            } else clip
+        }
+        _editorProject.value = current.copy(videoClips = updatedClips)
+    }
+
+    fun duplicateClip(clipId: String) {
+        val current = _editorProject.value
+        val index = current.videoClips.indexOfFirst { it.id == clipId }
+        if (index >= 0) {
+            val clip = current.videoClips[index]
+            val engine = VideoEditorEngine()
+            val newId = "clip_${System.currentTimeMillis()}"
+            val duplicate = clip.copy(
+                id = newId,
+                title = "${clip.title} (Copy)",
+                frames = engine.generateDefaultFramesForClip(newId, clip.durationMs, "${clip.title} (Copy)")
+            )
+            val list = current.videoClips.toMutableList().apply { add(index + 1, duplicate) }
+            _editorProject.value = current.copy(videoClips = list)
+        }
+    }
+
+    fun deleteClip(clipId: String) {
+        val current = _editorProject.value
+        val list = current.videoClips.filterNot { it.id == clipId }
+        _editorProject.value = current.copy(videoClips = list)
+    }
+
+    fun moveFrameLeft(clipId: String, frameId: String) {
+        val current = _editorProject.value
+        val updatedClips = current.videoClips.map { clip ->
+            if (clip.id == clipId) {
+                val fIdx = clip.frames.indexOfFirst { it.id == frameId }
+                if (fIdx > 0) {
+                    val fList = clip.frames.toMutableList()
+                    val frame = fList.removeAt(fIdx)
+                    fList.add(fIdx - 1, frame)
+                    val reindexed = fList.mapIndexed { idx, f -> f.copy(frameIndex = idx + 1) }
+                    clip.copy(frames = reindexed)
+                } else clip
+            } else clip
+        }
+        _editorProject.value = current.copy(videoClips = updatedClips)
+    }
+
+    fun moveFrameRight(clipId: String, frameId: String) {
+        val current = _editorProject.value
+        val updatedClips = current.videoClips.map { clip ->
+            if (clip.id == clipId) {
+                val fIdx = clip.frames.indexOfFirst { it.id == frameId }
+                if (fIdx in 0 until clip.frames.lastIndex) {
+                    val fList = clip.frames.toMutableList()
+                    val frame = fList.removeAt(fIdx)
+                    fList.add(fIdx + 1, frame)
+                    val reindexed = fList.mapIndexed { idx, f -> f.copy(frameIndex = idx + 1) }
+                    clip.copy(frames = reindexed)
+                } else clip
+            } else clip
+        }
+        _editorProject.value = current.copy(videoClips = updatedClips)
+    }
+
+    fun reorderClipFrames(clipId: String, fromFrameIdx: Int, toFrameIdx: Int) {
+        val current = _editorProject.value
+        val updatedClips = current.videoClips.map { clip ->
+            if (clip.id == clipId && fromFrameIdx in clip.frames.indices && toFrameIdx in clip.frames.indices) {
+                val fList = clip.frames.toMutableList()
+                val frame = fList.removeAt(fromFrameIdx)
+                fList.add(toFrameIdx, frame)
+                val reindexed = fList.mapIndexed { idx, f -> f.copy(frameIndex = idx + 1) }
+                clip.copy(frames = reindexed)
+            } else clip
+        }
+        _editorProject.value = current.copy(videoClips = updatedClips)
+    }
+
+    fun reverseClipFrames(clipId: String) {
+        val current = _editorProject.value
+        val updatedClips = current.videoClips.map { clip ->
+            if (clip.id == clipId) {
+                val reversed = clip.frames.reversed().mapIndexed { idx, f -> f.copy(frameIndex = idx + 1) }
+                clip.copy(frames = reversed)
+            } else clip
+        }
+        _editorProject.value = current.copy(videoClips = updatedClips)
+    }
+
+    fun duplicateFrame(clipId: String, frameId: String) {
+        val current = _editorProject.value
+        val updatedClips = current.videoClips.map { clip ->
+            if (clip.id == clipId) {
+                val fIdx = clip.frames.indexOfFirst { it.id == frameId }
+                if (fIdx >= 0) {
+                    val frame = clip.frames[fIdx]
+                    val copy = frame.copy(
+                        id = "${frame.id}_dup_${System.currentTimeMillis()}",
+                        label = "${frame.label} (Hold)",
+                        isKeyframe = true
+                    )
+                    val fList = clip.frames.toMutableList().apply { add(fIdx + 1, copy) }
+                    val reindexed = fList.mapIndexed { idx, f -> f.copy(frameIndex = idx + 1) }
+                    clip.copy(frames = reindexed)
+                } else clip
+            } else clip
+        }
+        _editorProject.value = current.copy(videoClips = updatedClips)
+    }
+
+    fun deleteFrame(clipId: String, frameId: String) {
+        val current = _editorProject.value
+        val updatedClips = current.videoClips.map { clip ->
+            if (clip.id == clipId && clip.frames.size > 2) {
+                val filtered = clip.frames.filterNot { it.id == frameId }
+                val reindexed = filtered.mapIndexed { idx, f -> f.copy(frameIndex = idx + 1) }
+                clip.copy(frames = reindexed)
+            } else clip
+        }
+        _editorProject.value = current.copy(videoClips = updatedClips)
+    }
+
+    fun addKeyframeToClip(clipId: String) {
+        val current = _editorProject.value
+        val updatedClips = current.videoClips.map { clip ->
+            if (clip.id == clipId) {
+                val nextIdx = clip.frames.size + 1
+                val newFrame = VideoFrameItem(
+                    id = "${clip.id}_kf_${System.currentTimeMillis()}",
+                    frameIndex = nextIdx,
+                    timestampMs = clip.durationMs,
+                    label = "Keyframe $nextIdx",
+                    visualHue = (clip.frames.size * 45f) % 360f,
+                    isKeyframe = true
+                )
+                val fList = clip.frames + newFrame
+                val reindexed = fList.mapIndexed { idx, f -> f.copy(frameIndex = idx + 1) }
+                clip.copy(frames = reindexed)
+            } else clip
+        }
+        _editorProject.value = current.copy(videoClips = updatedClips)
+    }
+
+    fun resetTimelineToDefaults() {
+        _editorProject.value = createInitialEditorProject()
     }
 
     fun addAudioTrackToEditor(title: String = "Background Cyberpunk Synth") {
@@ -1034,6 +1497,59 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             repository.inferenceEngineManager.trimMemory()
             System.gc()
+        }
+    }
+
+    companion object {
+        fun createInitialEditorProject(): VideoEditorProject {
+            val engine = VideoEditorEngine()
+            val clip1 = MediaClipTrack(
+                id = "clip_01_cyber",
+                title = "🚀 Cyberpunk City Infiltration",
+                filePath = "renders/scene_cyber.mp4",
+                startMs = 0L,
+                endMs = 4000L,
+                durationMs = 4000L,
+                playbackSpeed = 1.0f,
+                velocityCurve = "AUTO_VELOCITY",
+                aiStyleEffect = "CYBERPUNK_GLOW",
+                transitionType = "WHIP_PAN",
+                filterName = "CapCut Teal/Orange",
+                frames = engine.generateDefaultFramesForClip("clip_01_cyber", 4000L, "Cyberpunk City")
+            )
+            val clip2 = MediaClipTrack(
+                id = "clip_02_anime",
+                title = "🎌 Anime Mech High-Speed Duel",
+                filePath = "renders/scene_anime.mp4",
+                startMs = 0L,
+                endMs = 3200L,
+                durationMs = 3200L,
+                playbackSpeed = 1.25f,
+                velocityCurve = "HERO_PULSE",
+                aiStyleEffect = "ANIME_CONVERSION",
+                transitionType = "GLITCH_TEAR",
+                filterName = "Neon Vivid",
+                frames = engine.generateDefaultFramesForClip("clip_02_anime", 3200L, "Anime Mech")
+            )
+            val clip3 = MediaClipTrack(
+                id = "clip_03_quantum",
+                title = "🌌 Quantum Warp Explosion",
+                filePath = "renders/scene_quantum.mp4",
+                startMs = 0L,
+                endMs = 4800L,
+                durationMs = 4800L,
+                playbackSpeed = 0.8f,
+                velocityCurve = "BULLET_TIME",
+                aiStyleEffect = "ZOOM_3D_PARALLAX",
+                transitionType = "FLASH_WHITE",
+                filterName = "Vintage Film",
+                frames = engine.generateDefaultFramesForClip("clip_03_quantum", 4800L, "Quantum Warp")
+            )
+            return VideoEditorProject(
+                id = "proj_studio_01",
+                name = "Sora Cinematic Timeline",
+                videoClips = listOf(clip1, clip2, clip3)
+            )
         }
     }
 }

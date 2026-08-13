@@ -1,7 +1,11 @@
 package com.example.ui.screens
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -20,6 +24,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ui.AttachmentType
+import com.example.ui.ChatAttachment
 import com.example.ui.SoraMainViewModel
 import com.example.ui.SoraTab
 import com.example.ui.components.*
@@ -29,10 +35,63 @@ import com.example.ui.theme.*
 fun AssistantScreen(viewModel: SoraMainViewModel) {
     val chatMessages by viewModel.chatMessages.collectAsState()
     val activeTimers by viewModel.activeTimers.collectAsState()
+    val stagedAttachments by viewModel.stagedChatAttachments.collectAsState()
     val scriptPkg by viewModel.generatedScript.collectAsState()
     val isLoading by viewModel.isAssistantLoading.collectAsState()
 
     var chatInputText by remember { mutableStateOf("") }
+    var showAttachmentMenu by remember { mutableStateOf(false) }
+
+    // Activity Result Launchers for Image, PDF, and Generic Files
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            val fileName = it.lastPathSegment?.substringAfterLast('/') ?: "image_${System.currentTimeMillis()}.png"
+            viewModel.addChatAttachment(
+                ChatAttachment(
+                    uri = it.toString(),
+                    fileName = fileName,
+                    mimeType = "image/*",
+                    type = AttachmentType.IMAGE
+                )
+            )
+        }
+    }
+
+    val pdfPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            val fileName = it.lastPathSegment?.substringAfterLast('/') ?: "document_${System.currentTimeMillis()}.pdf"
+            viewModel.addChatAttachment(
+                ChatAttachment(
+                    uri = it.toString(),
+                    fileName = fileName,
+                    mimeType = "application/pdf",
+                    type = AttachmentType.PDF
+                )
+            )
+        }
+    }
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            val fileName = it.lastPathSegment?.substringAfterLast('/') ?: "file_${System.currentTimeMillis()}"
+            val isPdf = fileName.endsWith(".pdf", ignoreCase = true)
+            val isImg = fileName.endsWith(".png", ignoreCase = true) || fileName.endsWith(".jpg", ignoreCase = true) || fileName.endsWith(".jpeg", ignoreCase = true)
+            viewModel.addChatAttachment(
+                ChatAttachment(
+                    uri = it.toString(),
+                    fileName = fileName,
+                    mimeType = if (isPdf) "application/pdf" else if (isImg) "image/*" else "application/octet-stream",
+                    type = if (isPdf) AttachmentType.PDF else if (isImg) AttachmentType.IMAGE else AttachmentType.FILE
+                )
+            )
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -42,11 +101,11 @@ fun AssistantScreen(viewModel: SoraMainViewModel) {
         // Top Header
         SoraSectionHeader(
             title = "🤖 AI Chat & Action Assistant",
-            subtitle = "Interact with AI to execute device commands (Open YouTube, set timers, manhwa recaps)",
+            subtitle = "Upload images, PDFs, & files. Ask AI to execute device actions & generate scripts",
             icon = Icons.Default.Chat
         )
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         // Active Timers Bar (if any timer is running)
         if (activeTimers.isNotEmpty()) {
@@ -108,11 +167,62 @@ fun AssistantScreen(viewModel: SoraMainViewModel) {
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
         }
 
-        // Quick Action Command Chips
+        // Quick Action & Upload Chips
         LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(NeonCyan.copy(alpha = 0.2f))
+                        .border(1.dp, NeonCyan, RoundedCornerShape(8.dp))
+                        .clickable { imagePickerLauncher.launch("image/*") }
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                        .testTag("upload_image_chip")
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Default.Image, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("+ Upload Image", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = NeonCyan)
+                    }
+                }
+            }
+            item {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(AccentRed.copy(alpha = 0.2f))
+                        .border(1.dp, AccentRed, RoundedCornerShape(8.dp))
+                        .clickable { pdfPickerLauncher.launch("application/pdf") }
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                        .testTag("upload_pdf_chip")
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Default.PictureAsPdf, contentDescription = null, tint = AccentRed, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("+ Upload PDF", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = AccentRed)
+                    }
+                }
+            }
+            item {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(NeonPurple.copy(alpha = 0.2f))
+                        .border(1.dp, NeonPurple, RoundedCornerShape(8.dp))
+                        .clickable { filePickerLauncher.launch("*/*") }
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                        .testTag("upload_file_chip")
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Default.AttachFile, contentDescription = null, tint = NeonPurple, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("+ Upload File", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = NeonPurple)
+                    }
+                }
+            }
             item {
                 TypeChip("▶️ Open YouTube", "YT", "ACTION") {
                     viewModel.sendChatMessage("Open YouTube")
@@ -133,14 +243,9 @@ fun AssistantScreen(viewModel: SoraMainViewModel) {
                     viewModel.sendChatMessage("Write sci-fi movie script about solar pilots")
                 }
             }
-            item {
-                TypeChip("⚙️ Check Status", "STATUS", "ACTION") {
-                    viewModel.sendChatMessage("Check system status and wake word")
-                }
-            }
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         // Chat Message History Area
         LazyColumn(
@@ -173,7 +278,7 @@ fun AssistantScreen(viewModel: SoraMainViewModel) {
 
                     Column(
                         modifier = Modifier
-                            .widthIn(max = 280.dp)
+                            .widthIn(max = 300.dp)
                             .clip(RoundedCornerShape(12.dp))
                             .background(if (isUser) ElectricPink else GlassSurface)
                             .border(1.dp, if (isUser) ElectricPink else NeonCyan.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
@@ -186,6 +291,78 @@ fun AssistantScreen(viewModel: SoraMainViewModel) {
                             color = if (isUser) Color.White.copy(alpha = 0.8f) else NeonCyan
                         )
                         Spacer(modifier = Modifier.height(2.dp))
+
+                        // Render attachments if attached to message
+                        if (msg.attachments.isNotEmpty()) {
+                            Column(
+                                modifier = Modifier.padding(vertical = 4.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                msg.attachments.forEach { att ->
+                                    when (att.type) {
+                                        AttachmentType.IMAGE -> {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(Color.Black.copy(alpha = 0.3f))
+                                                    .padding(8.dp)
+                                            ) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Icon(imageVector = Icons.Default.Image, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(24.dp))
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        Text(text = att.fileName, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                                        Text(text = "Image Keyframe Upload", fontSize = 9.sp, color = TextSecondary)
+                                                    }
+                                                    SoraBadge(text = "IMG", color = NeonCyan)
+                                                }
+                                            }
+                                        }
+                                        AttachmentType.PDF -> {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(Color.Black.copy(alpha = 0.3f))
+                                                    .padding(8.dp)
+                                            ) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Icon(imageVector = Icons.Default.PictureAsPdf, contentDescription = null, tint = AccentRed, modifier = Modifier.size(24.dp))
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        Text(text = att.fileName, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                                        Text(text = "PDF Document Upload", fontSize = 9.sp, color = TextSecondary)
+                                                    }
+                                                    SoraBadge(text = "PDF", color = AccentRed)
+                                                }
+                                            }
+                                        }
+                                        else -> {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(Color.Black.copy(alpha = 0.3f))
+                                                    .padding(8.dp)
+                                            ) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Icon(imageVector = Icons.Default.InsertDriveFile, contentDescription = null, tint = NeonPurple, modifier = Modifier.size(24.dp))
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        Text(text = att.fileName, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                                        Text(text = "Attached File", fontSize = 9.sp, color = TextSecondary)
+                                                    }
+                                                    SoraBadge(text = "FILE", color = NeonPurple)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                        }
+
                         Text(
                             text = msg.text,
                             fontSize = 13.sp,
@@ -273,9 +450,87 @@ fun AssistantScreen(viewModel: SoraMainViewModel) {
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
-        // Interactive Input Bar
+        // Staged Attachments Strip (shows files selected before sending)
+        if (stagedAttachments.isNotEmpty()) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 6.dp),
+                color = GlassSurfaceVariant,
+                shape = RoundedCornerShape(12.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, NeonCyan.copy(alpha = 0.4f))
+            ) {
+                Column(modifier = Modifier.padding(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "📎 Ready to send (${stagedAttachments.size} attachment${if (stagedAttachments.size > 1) "s" else ""})",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = NeonCyan
+                        )
+                        Text(
+                            text = "Clear All",
+                            fontSize = 10.sp,
+                            color = AccentRed,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .clickable { viewModel.clearStagedChatAttachments() }
+                                .padding(2.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(stagedAttachments) { att ->
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(GlassSurface)
+                                    .border(1.dp, GlassSurfaceVariant, RoundedCornerShape(8.dp))
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = when (att.type) {
+                                            AttachmentType.IMAGE -> Icons.Default.Image
+                                            AttachmentType.PDF -> Icons.Default.PictureAsPdf
+                                            else -> Icons.Default.InsertDriveFile
+                                        },
+                                        contentDescription = null,
+                                        tint = when (att.type) {
+                                            AttachmentType.IMAGE -> NeonCyan
+                                            AttachmentType.PDF -> AccentRed
+                                            else -> NeonPurple
+                                        },
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = if (att.fileName.length > 18) att.fileName.take(18) + "..." else att.fileName,
+                                        fontSize = 11.sp,
+                                        color = TextPrimary
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    IconButton(
+                                        onClick = { viewModel.removeChatAttachment(att.id) },
+                                        modifier = Modifier.size(16.dp)
+                                    ) {
+                                        Icon(imageVector = Icons.Default.Close, contentDescription = "Remove", tint = TextSecondary, modifier = Modifier.size(12.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Interactive Input Bar with Attachment Dropdown & Voice
         Surface(
             modifier = Modifier.fillMaxWidth(),
             color = GlassSurface,
@@ -285,9 +540,46 @@ fun AssistantScreen(viewModel: SoraMainViewModel) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Upload Attachment (+) Button with Dropdown Menu
+                Box {
+                    IconButton(
+                        onClick = { showAttachmentMenu = true },
+                        modifier = Modifier.testTag("chat_attachment_btn")
+                    ) {
+                        Icon(imageVector = Icons.Default.AddCircle, contentDescription = "Attach File", tint = NeonCyan, modifier = Modifier.size(24.dp))
+                    }
+
+                    DropdownMenu(
+                        expanded = showAttachmentMenu,
+                        onDismissRequest = { showAttachmentMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("🖼️ Upload Image (Photos/Gallery)") },
+                            onClick = {
+                                showAttachmentMenu = false
+                                imagePickerLauncher.launch("image/*")
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("📄 Upload PDF Document") },
+                            onClick = {
+                                showAttachmentMenu = false
+                                pdfPickerLauncher.launch("application/pdf")
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("📁 Upload File (Any Format)") },
+                            onClick = {
+                                showAttachmentMenu = false
+                                filePickerLauncher.launch("*/*")
+                            }
+                        )
+                    }
+                }
+
                 IconButton(onClick = { viewModel.triggerWakeWordEvent("Skra! Open YouTube") }) {
                     Icon(imageVector = Icons.Default.Mic, contentDescription = "Voice Command", tint = NeonCyan, modifier = Modifier.size(20.dp))
                 }
@@ -295,7 +587,7 @@ fun AssistantScreen(viewModel: SoraMainViewModel) {
                 OutlinedTextField(
                     value = chatInputText,
                     onValueChange = { chatInputText = it },
-                    placeholder = { Text("Ask AI to open YouTube, set timer, write script...", fontSize = 12.sp, color = TextSecondary) },
+                    placeholder = { Text("Ask AI or attach photos/PDFs...", fontSize = 12.sp, color = TextSecondary) },
                     modifier = Modifier
                         .weight(1f)
                         .testTag("chat_input_field"),
@@ -310,8 +602,8 @@ fun AssistantScreen(viewModel: SoraMainViewModel) {
 
                 IconButton(
                     onClick = {
-                        if (chatInputText.isNotBlank()) {
-                            viewModel.sendChatMessage(chatInputText)
+                        if (chatInputText.isNotBlank() || stagedAttachments.isNotEmpty()) {
+                            viewModel.sendChatMessage(chatInputText, stagedAttachments)
                             chatInputText = ""
                         }
                     },

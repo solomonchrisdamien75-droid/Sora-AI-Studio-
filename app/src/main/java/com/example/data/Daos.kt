@@ -25,6 +25,9 @@ interface AiModelDao {
 
     @Delete
     suspend fun deleteModel(model: AiModelEntity)
+
+    @Query("DELETE FROM ai_models WHERE id = :id")
+    suspend fun deleteModelById(id: String)
 }
 
 @Dao
@@ -32,8 +35,17 @@ interface GenerationJobDao {
     @Query("SELECT * FROM generation_jobs ORDER BY createdAt DESC")
     fun getAllJobs(): Flow<List<GenerationJobEntity>>
 
+    @Query("SELECT * FROM generation_jobs WHERE status = 'QUEUED' ORDER BY createdAt ASC")
+    fun getQueuedJobs(): Flow<List<GenerationJobEntity>>
+
+    @Query("SELECT * FROM generation_jobs WHERE status = 'RUNNING' LIMIT 1")
+    fun getRunningJob(): Flow<GenerationJobEntity?>
+
     @Query("SELECT * FROM generation_jobs WHERE status = 'RUNNING' OR status = 'QUEUED' LIMIT 1")
     fun getActiveJob(): Flow<GenerationJobEntity?>
+
+    @Query("SELECT * FROM generation_jobs WHERE status = 'QUEUED' ORDER BY createdAt ASC LIMIT 1")
+    suspend fun getNextQueuedJob(): GenerationJobEntity?
 
     @Query("SELECT * FROM generation_jobs WHERE id = :id LIMIT 1")
     suspend fun getJobById(id: String): GenerationJobEntity?
@@ -41,11 +53,23 @@ interface GenerationJobDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertJob(job: GenerationJobEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertJobs(jobs: List<GenerationJobEntity>)
+
     @Update
     suspend fun updateJob(job: GenerationJobEntity)
 
+    @Query("UPDATE generation_jobs SET status = :status WHERE id = :id")
+    suspend fun updateJobStatus(id: String, status: String)
+
     @Query("DELETE FROM generation_jobs WHERE id = :id")
     suspend fun deleteJobById(id: String)
+
+    @Query("DELETE FROM generation_jobs WHERE status IN ('COMPLETED', 'CANCELLED', 'FAILED')")
+    suspend fun deleteFinishedJobs()
+
+    @Query("DELETE FROM generation_jobs")
+    suspend fun clearAllJobs()
 }
 
 @Dao
