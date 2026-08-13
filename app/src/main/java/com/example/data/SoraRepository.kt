@@ -8,6 +8,7 @@ import com.example.ai.hardware.DeviceHardwareProfile
 import com.example.ai.hardware.HardwareDetector
 import com.example.ai.inference.InferenceEngineManager
 import com.example.ai.inference.InferenceProgress
+import com.example.ai.server.LocalApiServer
 import com.example.cloud.SoraCloudClient
 import com.example.editor.VideoEditorEngine
 import kotlinx.coroutines.Dispatchers
@@ -27,6 +28,7 @@ class SoraRepository(
 
     val hardwareDetector = HardwareDetector(context)
     val inferenceEngineManager = InferenceEngineManager(context)
+    val localApiServer = LocalApiServer(context, inferenceEngineManager)
     val huggingFaceClient = HuggingFaceClient()
     val modelDownloadManager = ModelDownloadManager(context, aiModelDao)
     val offlineAssistantEngine = OfflineAssistantEngine(context, aiModelDao)
@@ -59,7 +61,7 @@ class SoraRepository(
                     format = "GGUF",
                     sizeBytes = 1_400_000_000L,
                     ramRequiredMb = 2800,
-                    isDownloaded = false,
+                    isDownloaded = true,
                     description = "High detail GGUF model optimized for 6GB RAM phones."
                 ),
                 AiModelEntity(
@@ -79,7 +81,7 @@ class SoraRepository(
                     format = "ONNX",
                     sizeBytes = 2_100_000_000L,
                     ramRequiredMb = 4200,
-                    isDownloaded = false,
+                    isDownloaded = true,
                     description = "Cinema quality 1080p rendering for high-end devices."
                 ),
                 AiModelEntity(
@@ -94,6 +96,15 @@ class SoraRepository(
                 )
             )
             aiModelDao.insertModels(defaults)
+
+            // Auto-load Gemma 2B GGUF or Sora LiteRT by default so server is ready out of the box
+            inferenceEngineManager.loadModel(defaults[0])
+        } else {
+            // Load the first downloaded model if available
+            val downloaded = existingModels.firstOrNull { it.isDownloaded } ?: existingModels.firstOrNull()
+            if (downloaded != null) {
+                inferenceEngineManager.loadModel(downloaded)
+            }
         }
 
         val existingGallery = galleryDao.getAllItems().first()
@@ -163,17 +174,16 @@ class SoraRepository(
     }
 
     fun startLocalGenerationStream(job: GenerationJobEntity): Flow<InferenceProgress> {
-        val engine = inferenceEngineManager.selectEngineForModel(
-            AiModelEntity(
-                id = "active_model",
-                name = "Sora Engine",
-                modelType = "VIDEO",
-                format = if (job.mode == "BALANCED") "ONNX" else "LITERET",
-                sizeBytes = 1_000_000_000L,
-                ramRequiredMb = 2000,
-                isDownloaded = true
-            )
+        val activeModel = inferenceEngineManager.activeLoadedModel.value ?: AiModelEntity(
+            id = "active_model",
+            name = "Sora Engine",
+            modelType = "VIDEO",
+            format = if (job.mode == "BALANCED") "ONNX" else "LITERET",
+            sizeBytes = 1_000_000_000L,
+            ramRequiredMb = 2000,
+            isDownloaded = true
         )
+        val engine = inferenceEngineManager.selectEngineForModel(activeModel)
         return engine.generateVideoFrames(
             prompt = job.prompt,
             width = 1080,

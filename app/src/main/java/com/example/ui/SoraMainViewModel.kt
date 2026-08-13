@@ -24,7 +24,7 @@ enum class SoraTab(val title: String, val route: String) {
     PROJECTS("Projects", "projects"),
     EDITOR("Editor", "editor"),
     ASSISTANT("AI Assistant", "assistant"),
-    SORA_CLOUD("Sora Cloud", "cloud"),
+    SORA_CLOUD("Server & Cloud", "server_cloud"),
     SETTINGS("Settings", "settings")
 }
 
@@ -207,6 +207,109 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
 
     val cloudServers: StateFlow<List<SoraCloudServerEntity>> = repository.soraCloudDao.getAllServers()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val serverState: StateFlow<com.example.ai.server.ServerState> = repository.localApiServer.serverState
+
+    val activeLoadedModel: StateFlow<AiModelEntity?> = repository.inferenceEngineManager.activeLoadedModel
+
+    val activeEngine: StateFlow<com.example.ai.inference.ModelInferenceEngine?> = repository.inferenceEngineManager.activeEngine
+
+    private val _serverOperationMessage = MutableStateFlow<String?>(null)
+    val serverOperationMessage: StateFlow<String?> = _serverOperationMessage.asStateFlow()
+
+    fun dismissServerOperationMessage() {
+        _serverOperationMessage.value = null
+    }
+
+    fun loadModelForServer(model: AiModelEntity) {
+        viewModelScope.launch {
+            val wasServerRunning = serverState.value.status == com.example.ai.server.ServerStatus.RUNNING
+            if (wasServerRunning) {
+                repository.localApiServer.stopServer()
+            }
+
+            val result = repository.inferenceEngineManager.loadModel(model)
+            _serverOperationMessage.value = result.second
+
+            if (wasServerRunning && result.first) {
+                // Auto-restart server with new model
+                repository.localApiServer.startServer()
+            }
+        }
+    }
+
+    fun unloadActiveModel() {
+        viewModelScope.launch {
+            if (serverState.value.status == com.example.ai.server.ServerStatus.RUNNING) {
+                repository.localApiServer.stopServer()
+            }
+            repository.inferenceEngineManager.unloadCurrentModel()
+            _serverOperationMessage.value = "Active model unloaded from memory"
+        }
+    }
+
+    fun toggleApiServer() {
+        if (serverState.value.status == com.example.ai.server.ServerStatus.RUNNING) {
+            repository.localApiServer.stopServer()
+            _serverOperationMessage.value = "Local API Server stopped"
+        } else {
+            val result = repository.localApiServer.startServer()
+            _serverOperationMessage.value = result.second
+        }
+    }
+
+    fun startApiServer(): Pair<Boolean, String> {
+        val result = repository.localApiServer.startServer()
+        _serverOperationMessage.value = result.second
+        return result
+    }
+
+    fun stopApiServer() {
+        repository.localApiServer.stopServer()
+        _serverOperationMessage.value = "Local API Server stopped"
+    }
+
+    fun updateServerPort(port: Int) {
+        val currentConfig = serverState.value.config
+        val newConfig = currentConfig.copy(port = port.coerceIn(1024, 65535))
+        val wasRunning = serverState.value.status == com.example.ai.server.ServerStatus.RUNNING
+        if (wasRunning) {
+            repository.localApiServer.stopServer()
+        }
+        repository.localApiServer.updateConfig(newConfig)
+        if (wasRunning) {
+            repository.localApiServer.startServer()
+        }
+    }
+
+    fun updateApiKeyEnabled(enabled: Boolean) {
+        val currentConfig = serverState.value.config
+        repository.localApiServer.updateConfig(currentConfig.copy(apiKeyEnabled = enabled))
+    }
+
+    fun updateApiKey(key: String) {
+        val currentConfig = serverState.value.config
+        repository.localApiServer.updateConfig(currentConfig.copy(apiKey = key))
+    }
+
+    fun regenerateApiKey() {
+        val newKey = "sk-sora-local-" + java.util.UUID.randomUUID().toString().replace("-", "").take(12)
+        updateApiKey(newKey)
+    }
+
+    fun updateTunnelEnabled(enabled: Boolean) {
+        val currentConfig = serverState.value.config
+        repository.localApiServer.updateConfig(currentConfig.copy(tunnelEnabled = enabled))
+    }
+
+    fun updateTunnelSubdomain(subdomain: String) {
+        val currentConfig = serverState.value.config
+        repository.localApiServer.updateConfig(currentConfig.copy(tunnelSubdomain = subdomain))
+    }
+
+    fun getBackendInfoForModel(model: AiModelEntity?): com.example.ai.server.ServerModelBackendInfo {
+        return repository.inferenceEngineManager.getBackendInfoForModel(model)
+    }
 
     fun selectTab(tab: SoraTab) {
         _selectedTab.value = tab

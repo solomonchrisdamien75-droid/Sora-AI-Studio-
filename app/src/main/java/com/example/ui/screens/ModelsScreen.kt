@@ -21,15 +21,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.AiModelEntity
 import com.example.ui.SoraMainViewModel
+import com.example.ui.SoraTab
 import com.example.ui.components.*
 import com.example.ui.theme.*
-
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.collectAsState
 
 @Composable
 fun ModelsScreen(viewModel: SoraMainViewModel) {
     val models by viewModel.allModels.collectAsState()
+    val activeLoadedModel by viewModel.activeLoadedModel.collectAsState()
     val hardware by viewModel.hardwareProfile.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf("ALL") }
@@ -58,11 +57,54 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
         item {
             SoraSectionHeader(
                 title = "Model Manager & Storage Analyzer",
-                subtitle = "Manage GGUF, LiteRT, ONNX, Safetensors & ComfyUI models",
+                subtitle = "Universal manager for GGUF, LiteRT, ONNX & Safetensors",
                 icon = Icons.Default.FolderZip,
                 actionText = "Folder Scan",
                 onActionClick = { viewModel.refreshHardwareProfile() }
             )
+        }
+
+        // Active Model in Memory Status Banner
+        if (activeLoadedModel != null) {
+            item {
+                SoraGlassCard(borderColor = AccentGreen) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                SoraBadge(text = "CURRENTLY LOADED IN MEMORY", color = AccentGreen)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                SoraBadge(text = activeLoadedModel!!.format, color = NeonCyan)
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = activeLoadedModel!!.name,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = "Ready for on-device generation & Local REST API server",
+                                fontSize = 11.sp,
+                                color = TextSecondary
+                            )
+                        }
+
+                        Button(
+                            onClick = { viewModel.selectTab(SoraTab.SORA_CLOUD) },
+                            colors = ButtonDefaults.buttonColors(containerColor = AccentGreen),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.Dns, contentDescription = null, tint = DeepDarkBg, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Open Server", color = DeepDarkBg, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
         }
 
         // Folder Scan & Storage Location Toolbar
@@ -127,9 +169,14 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
         items(filteredModels) { model ->
             val availRamMb = ((hardware?.availableRamGb ?: 4.0f) * 1024).toInt()
             val isCompatible = availRamMb >= model.ramRequiredMb
+            val isActiveModel = activeLoadedModel?.id == model.id
 
             SoraGlassCard(
-                borderColor = if (isCompatible) NeonCyan.copy(alpha = 0.3f) else AccentRed.copy(alpha = 0.4f),
+                borderColor = when {
+                    isActiveModel -> AccentGreen
+                    isCompatible -> NeonCyan.copy(alpha = 0.3f)
+                    else -> AccentRed.copy(alpha = 0.4f)
+                },
                 modifier = Modifier.testTag("model_card_${model.id}")
             ) {
                 Row(
@@ -140,12 +187,16 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
                     Column(modifier = Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             SoraBadge(text = model.format, color = NeonCyan)
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
                             SoraBadge(
                                 text = "${model.ramRequiredMb}MB RAM",
                                 color = if (isCompatible) AccentGreen else AccentRed,
                                 textColor = TextPrimary
                             )
+                            if (isActiveModel) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                SoraBadge(text = "ACTIVE IN MEMORY", color = AccentGreen)
+                            }
                         }
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(text = model.name, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
@@ -153,10 +204,28 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
                     }
 
                     if (model.isDownloaded) {
-                        Icon(imageVector = Icons.Default.CheckCircle, contentDescription = "Installed", tint = AccentGreen, modifier = Modifier.size(24.dp))
+                        if (isActiveModel) {
+                            OutlinedButton(
+                                onClick = { viewModel.unloadActiveModel() },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = AccentRed),
+                                modifier = Modifier.testTag("unload_model_btn_${model.id}")
+                            ) {
+                                Text("Unload", fontSize = 11.sp)
+                            }
+                        } else {
+                            Button(
+                                onClick = { viewModel.loadModelForServer(model) },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                                modifier = Modifier.testTag("load_model_btn_${model.id}")
+                            ) {
+                                Text("Load Model", fontSize = 11.sp, color = DeepDarkBg, fontWeight = FontWeight.Bold)
+                            }
+                        }
                     } else {
                         OutlinedButton(
-                            onClick = { viewModel.selectTab(com.example.ui.SoraTab.DOWNLOADS) },
+                            onClick = { viewModel.selectTab(SoraTab.DOWNLOADS) },
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.testTag("download_model_btn_${model.id}")
                         ) {
@@ -171,10 +240,17 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(text = "Recommended: ${model.recommendedResolution} @ ${model.recommendedFps}fps", fontSize = 11.sp, color = TextSecondary)
-                    Text(text = if (isCompatible) "Ready for Inference" else "RAM Exceeded (${availRamMb}MB Avail)", fontSize = 11.sp, color = if (isCompatible) AccentGreen else AccentRed)
+                    Text(
+                        text = if (isActiveModel) "Active for Local API Server & Inference"
+                        else if (isCompatible) "Ready for Inference"
+                        else "RAM Exceeded (${availRamMb}MB Avail)",
+                        fontSize = 11.sp,
+                        color = if (isActiveModel || isCompatible) AccentGreen else AccentRed
+                    )
                 }
             }
         }
