@@ -68,6 +68,7 @@ class MainActivity : ComponentActivity() {
                             SoraTab.HOME -> HomeScreen(viewModel = viewModel)
                             SoraTab.GENERATE -> GenerateScreen(viewModel = viewModel)
                             SoraTab.QUEUE -> TaskQueueScreen(viewModel = viewModel)
+                            SoraTab.WAKE_WORD -> WakeWordScreen(viewModel = viewModel)
                             SoraTab.MODELS -> ModelsScreen(viewModel = viewModel)
                             SoraTab.DOWNLOADS -> DownloadsScreen(viewModel = viewModel)
                             SoraTab.GALLERY -> GalleryScreen(viewModel = viewModel)
@@ -145,6 +146,7 @@ fun getTabIcon(tab: SoraTab): ImageVector {
         SoraTab.HOME -> Icons.Default.Home
         SoraTab.GENERATE -> Icons.Default.VideoCall
         SoraTab.QUEUE -> Icons.Default.Queue
+        SoraTab.WAKE_WORD -> Icons.Default.GraphicEq
         SoraTab.MODELS -> Icons.Default.FolderZip
         SoraTab.DOWNLOADS -> Icons.Default.CloudDownload
         SoraTab.GALLERY -> Icons.Default.PermMedia

@@ -1,10 +1,22 @@
 package com.example.ui.screens
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -13,26 +25,104 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.example.ui.SoraMainViewModel
-import com.example.ui.components.*
+import com.example.ui.SoraTab
+import com.example.ui.components.SoraGlassCard
+import com.example.ui.components.SoraSectionHeader
 import com.example.ui.theme.*
-
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.collectAsState
 
 @Composable
 fun SettingsScreen(viewModel: SoraMainViewModel) {
-    val memoryMode by viewModel.memoryMode.collectAsState()
-    val useSdCard by viewModel.useSdCardCache.collectAsState()
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+
+    val themeMode by viewModel.themeMode.collectAsState()
+    val fontSizeScale by viewModel.fontSizeScale.collectAsState()
     val hardware by viewModel.hardwareProfile.collectAsState()
-    val statusMessage by viewModel.settingsStatusMessage.collectAsState()
-    val form by viewModel.generationForm.collectAsState()
+    val inferenceMode by viewModel.inferenceMode.collectAsState()
+    val modelExecutionPreset by viewModel.modelExecutionPreset.collectAsState()
+    val customSystemPrompt by viewModel.customSystemPrompt.collectAsState()
+    val settingsTemp by viewModel.settingsTemperature.collectAsState()
+    val maxTokens by viewModel.settingsMaxTokens.collectAsState()
+    val contextSize by viewModel.settingsContextSize.collectAsState()
+
+    val imageGenSteps by viewModel.imageGenSteps.collectAsState()
+    val imageSizePreset by viewModel.imageSizePreset.collectAsState()
+    val gpuSafetyThresholdMb by viewModel.gpuSafetyThresholdMb.collectAsState()
+    val imageBackend by viewModel.imageBackend.collectAsState()
+
+    val apiBaseUrl by viewModel.apiBaseUrl.collectAsState()
+    val apiEngineKey by viewModel.apiEngineKey.collectAsState()
+    val apiProviderPreset by viewModel.apiProviderPreset.collectAsState()
+    val apiEngineModel by viewModel.apiEngineModel.collectAsState()
+    val isFetchingModels by viewModel.isFetchingModels.collectAsState()
+
+    val disableMaxSteps by viewModel.disableMaxSteps.collectAsState()
+    val maxStepsPerTask by viewModel.maxStepsPerTask.collectAsState()
+    val contextLimitTokens by viewModel.contextLimitTokens.collectAsState()
+    val useScreenCompression by viewModel.useScreenCompression.collectAsState()
+    val sendSystemPrompt by viewModel.sendSystemPrompt.collectAsState()
+
+    val telegramBotToken by viewModel.telegramBotToken.collectAsState()
+    val isTelegramBotEnabled by viewModel.isTelegramBotEnabled.collectAsState()
+
+    var showApiKey by remember { mutableStateOf(false) }
+    var showLogsDialog by remember { mutableStateOf(false) }
+    var showTaskHistoryDialog by remember { mutableStateOf(false) }
+    var editableSystemPrompt by remember(customSystemPrompt) { mutableStateOf(customSystemPrompt) }
+
+    // Runtime Permission checking states
+    var hasMicPermission by remember {
+        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
+    }
+    var hasContactsPermission by remember {
+        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED)
+    }
+    var hasPhonePermission by remember {
+        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED)
+    }
+    var hasSmsPermission by remember {
+        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED)
+    }
+    var hasNotificationPermission by remember {
+        mutableStateOf(
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+            } else true
+        )
+    }
+
+    val micLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        hasMicPermission = granted
+        if (granted) Toast.makeText(context, "Microphone permission granted!", Toast.LENGTH_SHORT).show()
+    }
+    val contactsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        hasContactsPermission = granted
+        if (granted) Toast.makeText(context, "Contacts permission granted!", Toast.LENGTH_SHORT).show()
+    }
+    val phoneLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        hasPhonePermission = granted
+        if (granted) Toast.makeText(context, "Phone permission granted!", Toast.LENGTH_SHORT).show()
+    }
+    val smsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        hasSmsPermission = granted
+        if (granted) Toast.makeText(context, "SMS permission granted!", Toast.LENGTH_SHORT).show()
+    }
+    val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        hasNotificationPermission = granted
+        if (granted) Toast.makeText(context, "Notifications permission granted!", Toast.LENGTH_SHORT).show()
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -42,466 +132,1212 @@ fun SettingsScreen(viewModel: SoraMainViewModel) {
     ) {
         item {
             SoraSectionHeader(
-                title = "Studio Settings & Virtual Memory",
-                subtitle = "Storage workspace, memory allocation & hardware priority",
+                title = "Settings",
+                subtitle = "Engine parameters, OpenAI endpoints, permissions & system boundaries",
                 icon = Icons.Default.Settings
             )
         }
 
-        // Voice Wake Word 'Skra' & AI Device Control Panel
+        // ==========================================
+        // 1. APPEARANCE (Screenshots 2 & 4)
+        // ==========================================
         item {
-            SoraGlassCard(borderColor = ElectricPink) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(imageVector = Icons.Default.Mic, contentDescription = null, tint = ElectricPink, modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(text = "Voice Wake Word ('Skra')", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                        }
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "Speak 'Skra' anytime without touching the app or opening phone. Triggers AI voice recognition & device action executor.",
-                            fontSize = 11.sp,
-                            color = TextSecondary
-                        )
-                    }
-
-                    Switch(
-                        checked = form.wakeWordEnabled,
-                        onCheckedChange = { viewModel.toggleWakeWord(it) },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = ElectricPink,
-                            checkedTrackColor = ElectricPink.copy(alpha = 0.4f)
-                        ),
-                        modifier = Modifier.testTag("wake_word_switch")
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(imageVector = Icons.Default.PhonelinkSetup, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(text = "Full Device Control Permissions", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                        }
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "Grants AI permission to control system activities, execute app launches, and open YouTube hands-free on voice command.",
-                            fontSize = 11.sp,
-                            color = TextSecondary
-                        )
-                    }
-
-                    Switch(
-                        checked = form.deviceControlGranted,
-                        onCheckedChange = { viewModel.toggleDeviceControl(it) },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = NeonCyan,
-                            checkedTrackColor = NeonCyan.copy(alpha = 0.4f)
-                        ),
-                        modifier = Modifier.testTag("device_control_switch")
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Test Action Buttons
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Button(
-                        onClick = { viewModel.triggerWakeWordEvent("Skra! Open YouTube") },
-                        colors = ButtonDefaults.buttonColors(containerColor = ElectricPink),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.weight(1f).testTag("test_wake_word_btn")
-                    ) {
-                        Text("🗣️ Test Wake Word 'Skra'", fontSize = 11.sp, color = Color.White)
-                    }
-
-                    Button(
-                        onClick = { viewModel.launchYouTubeApp() },
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentRed),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.weight(1f).testTag("open_youtube_btn")
-                    ) {
-                        Text("▶️ Open YouTube", fontSize = 11.sp, color = Color.White)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // System Log Output
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(GlassSurfaceVariant)
-                        .padding(8.dp)
-                ) {
+            SoraGlassCard(borderColor = CardBorder) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
-                        text = "System Monitor: ${form.systemStatusLog}",
-                        fontSize = 10.sp,
-                        color = AccentGreen,
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                        text = "APPEARANCE",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextSecondary,
+                        letterSpacing = 1.sp
                     )
+
+                    // Theme selector rows
+                    val themeOptions = listOf(
+                        Triple("Light", Icons.Default.LightMode, "LIGHT"),
+                        Triple("Dark", Icons.Default.DarkMode, "DARK"),
+                        Triple("System Default", Icons.Default.SettingsBrightness, "SYSTEM")
+                    )
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(GlassSurface)
+                            .border(1.dp, CardBorder, RoundedCornerShape(10.dp))
+                    ) {
+                        themeOptions.forEachIndexed { index, (label, icon, value) ->
+                            val isSelected = themeMode == value
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { viewModel.setThemeMode(value) }
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = icon,
+                                        contentDescription = null,
+                                        tint = if (isSelected) NeonCyan else TextSecondary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text(text = label, fontSize = 14.sp, color = TextPrimary, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
+                                }
+                                if (isSelected) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "Selected",
+                                        tint = NeonCyan,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                            if (index < themeOptions.size - 1) {
+                                HorizontalDivider(color = CardBorder.copy(alpha = 0.5f), thickness = 0.5.dp)
+                            }
+                        }
+                    }
+
+                    // Font Size Slider Card (Screenshot 2)
+                    Card(
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(containerColor = GlassSurface),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, CardBorder)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(imageVector = Icons.Default.TextFields, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(text = "Font Size", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(NeonCyan.copy(alpha = 0.15f))
+                                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                                ) {
+                                    val sizeLabel = when {
+                                        fontSizeScale < 0.85f -> "XS"
+                                        fontSizeScale < 1.05f -> "Small"
+                                        else -> "Large"
+                                    }
+                                    Text(text = sizeLabel, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = NeonCyan)
+                                }
+                            }
+
+                            Text(
+                                text = "Small (${String.format("%.2f", fontSizeScale)}x) is the default size",
+                                fontSize = 11.sp,
+                                color = TextSecondary
+                            )
+
+                            Slider(
+                                value = fontSizeScale,
+                                onValueChange = { viewModel.setFontSizeScale(it) },
+                                valueRange = 0.75f..1.35f,
+                                colors = SliderDefaults.colors(
+                                    thumbColor = NeonCyan,
+                                    activeTrackColor = NeonCyan,
+                                    inactiveTrackColor = CardBorder
+                                )
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("XS", fontSize = 10.sp, color = TextSecondary)
+                                Text("Small", fontSize = 10.sp, color = NeonCyan, fontWeight = FontWeight.Bold)
+                                Text("Large", fontSize = 10.sp, color = TextSecondary)
+                            }
+                        }
+                    }
                 }
             }
         }
 
-        val msg = statusMessage
-        if (msg != null && msg.isNotEmpty()) {
-            item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(NeonCyan.copy(alpha = 0.2f))
-                        .border(1.dp, NeonCyan, RoundedCornerShape(12.dp))
-                        .padding(12.dp)
-                ) {
+        // ==========================================
+        // 2. DIAGNOSTICS & SYSTEM LOGS (Screenshot 2 & 5)
+        // ==========================================
+        item {
+            SoraGlassCard(borderColor = CardBorder) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "DIAGNOSTICS",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextSecondary,
+                        letterSpacing = 1.sp
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(GlassSurface)
+                            .border(1.dp, CardBorder, RoundedCornerShape(8.dp))
+                            .clickable { showLogsDialog = true }
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(NeonCyan.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(imageVector = Icons.Default.Article, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(18.dp))
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text("Logs", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                Text("View errors, warnings, and debug details", fontSize = 11.sp, color = TextSecondary)
+                            }
+                        }
+                        Icon(imageVector = Icons.Default.ChevronRight, contentDescription = "View", tint = TextSecondary)
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // 3. DEVICE HARDWARE PROFILE (Screenshot 2)
+        // ==========================================
+        item {
+            SoraGlassCard(borderColor = CardBorder) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "DEVICE",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextSecondary,
+                        letterSpacing = 1.sp
+                    )
+
+                    // Low RAM Card
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = CardDefaults.cardColors(containerColor = GlassSurface),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, AccentRed.copy(alpha = 0.4f))
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(AccentRed),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(imageVector = Icons.Default.Warning, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text("⚠️ Low RAM (2.6GB) — Use small models only", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                Text(
+                                    "Available: 0.3GB · Context: $contextSize · Tokens: $maxTokens",
+                                    fontSize = 11.sp,
+                                    color = TextSecondary
+                                )
+                            }
+                        }
+                    }
+
+                    // Snapdragon Processor Card
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = CardDefaults.cardColors(containerColor = GlassSurface),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, NeonPurple.copy(alpha = 0.4f))
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(NeonPurple),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(imageVector = Icons.Default.Memory, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text("Qualcomm Snapdragon NPU", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                Text("Recommended: Q4_K_M (recommended) · Q4_0_4_8 on X Elite", fontSize = 11.sp, color = TextSecondary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // 4. INFERENCE MODE (Screenshot 2)
+        // ==========================================
+        item {
+            SoraGlassCard(borderColor = CardBorder) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "INFERENCE MODE",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextSecondary,
+                        letterSpacing = 1.sp
+                    )
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(GlassSurface)
+                            .border(1.dp, CardBorder, RoundedCornerShape(10.dp))
+                    ) {
+                        // Local on-device option
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { viewModel.setInferenceMode("LOCAL") }
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(AccentGreen.copy(alpha = 0.2f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(imageVector = Icons.Default.PhoneAndroid, contentDescription = null, tint = AccentGreen, modifier = Modifier.size(18.dp))
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text("Local (On-Device)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                    Text("Snapdragon NPU / CPU Fallback", fontSize = 11.sp, color = TextSecondary)
+                                }
+                            }
+                            if (inferenceMode == "LOCAL") {
+                                Icon(imageVector = Icons.Default.Check, contentDescription = "Active", tint = NeonCyan)
+                            }
+                        }
+
+                        HorizontalDivider(color = CardBorder.copy(alpha = 0.5f), thickness = 0.5.dp)
+
+                        // Cloud API option
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { viewModel.setInferenceMode("CLOUD") }
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(NeonPurple.copy(alpha = 0.2f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(imageVector = Icons.Default.Cloud, contentDescription = null, tint = NeonPurple, modifier = Modifier.size(18.dp))
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text("Cloud API", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                    Text("OPENROUTER / DEEPSEEK / GROQ", fontSize = 11.sp, color = TextSecondary)
+                                }
+                            }
+                            if (inferenceMode == "CLOUD") {
+                                Icon(imageVector = Icons.Default.Check, contentDescription = "Active", tint = NeonCyan)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // 5. SYSTEM PROMPT (Screenshot 2)
+        // ==========================================
+        item {
+            SoraGlassCard(borderColor = CardBorder) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(text = msg, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        IconButton(onClick = { viewModel.setSettingsStatus("") }) {
-                            Icon(imageVector = Icons.Default.Close, contentDescription = "Close", tint = TextSecondary, modifier = Modifier.size(16.dp))
+                        Column {
+                            Text("SYSTEM PROMPT", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextSecondary, letterSpacing = 1.sp)
+                            Text("Applies to local and cloud models", fontSize = 11.sp, color = TextSecondary)
+                        }
+                        IconButton(
+                            onClick = {
+                                viewModel.setCustomSystemPrompt(editableSystemPrompt)
+                                Toast.makeText(context, "System prompt saved!", Toast.LENGTH_SHORT).show()
+                            }
+                        ) {
+                            Icon(imageVector = Icons.Default.CheckCircle, contentDescription = "Save", tint = AccentGreen)
                         }
                     }
+
+                    OutlinedTextField(
+                        value = editableSystemPrompt,
+                        onValueChange = { editableSystemPrompt = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = NeonCyan,
+                            unfocusedBorderColor = CardBorder,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        ),
+                        minLines = 3
+                    )
                 }
             }
         }
 
-        // Virtual RAM & Memory Allocation Manager
+        // ==========================================
+        // 6. MODEL EXECUTION & PARAMETERS (Screenshot 2 & 3)
+        // ==========================================
         item {
-            var ramLimitGb by remember { mutableStateOf(8f) }
-            var memorySource by remember { mutableStateOf("Hybrid Mode") } // Phone RAM, SD Card Cache, Hybrid Mode, Automatic Mode
+            SoraGlassCard(borderColor = CardBorder) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("MODEL PARAMETERS", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextSecondary, letterSpacing = 1.sp)
 
-            SoraGlassCard {
-                Text(text = "Virtual RAM & Memory Manager", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Specify how memory and cache storage are utilized during model loading. SD card cache is used as a fast workspace swap for model tensors.",
-                    fontSize = 12.sp,
-                    color = TextSecondary
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Text(text = "Memory Source Strategy", fontSize = 12.sp, color = NeonCyan)
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    MemoryChip("Phone RAM", memorySource) { memorySource = "Phone RAM" }
-                    MemoryChip("SD Cache", memorySource) { memorySource = "SD Cache" }
-                    MemoryChip("Hybrid Mode", memorySource) { memorySource = "Hybrid Mode" }
-                    MemoryChip("Automatic", memorySource) { memorySource = "Automatic" }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Text(text = "Inference Memory Allocation Limit: ${ramLimitGb.toInt()} GB", fontSize = 13.sp, color = TextPrimary, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(4.dp))
-                Slider(
-                    value = ramLimitGb,
-                    onValueChange = { ramLimitGb = it },
-                    valueRange = 3f..32f,
-                    steps = 28,
-                    colors = SliderDefaults.colors(
-                        thumbColor = NeonCyan,
-                        activeTrackColor = NeonCyan,
-                        inactiveTrackColor = GlassSurfaceVariant
+                    val presets = listOf(
+                        Triple("Auto Fast", "Try GPU first, then CPU fallback", "AUTO_FAST"),
+                        Triple("GPU Fast", "Maximum speed, may crash on some devices", "GPU_FAST"),
+                        Triple("CPU Safe", "Stable mode with lower speed", "CPU_SAFE")
                     )
-                )
 
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(text = "Mode: $memoryMode", fontSize = 11.sp, color = TextSecondary)
-                    Text(
-                        text = "Est. Speed: ${String.format("%.1f", (ramLimitGb * 1.2f))} FPS",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = AccentGreen
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Text(text = "Memory Execution Priority", fontSize = 12.sp, color = NeonPurple)
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    MemoryChip("Low RAM Mode", memoryMode) { viewModel.setMemoryMode("Low RAM Mode") }
-                    MemoryChip("Balanced Mode", memoryMode) { viewModel.setMemoryMode("Balanced Mode") }
-                    MemoryChip("Max Performance", memoryMode) { viewModel.setMemoryMode("Max Performance") }
-                }
-            }
-        }
-
-        // Export Presets & Default Formats
-        item {
-            var selectedFormat by remember { mutableStateOf("MP4") }
-            var selectedAspect by remember { mutableStateOf("16:9") }
-
-            SoraGlassCard {
-                Text(text = "Default Video Export Presets", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(text = "Configure container formats and aspect ratios for exported videos.", fontSize = 12.sp, color = TextSecondary)
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Text(text = "File Format Container", fontSize = 12.sp, color = TextSecondary)
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    MemoryChip("MP4", selectedFormat) { selectedFormat = "MP4" }
-                    MemoryChip("MOV", selectedFormat) { selectedFormat = "MOV" }
-                    MemoryChip("GIF", selectedFormat) { selectedFormat = "GIF" }
-                    MemoryChip("WEBM", selectedFormat) { selectedFormat = "WEBM" }
-                    MemoryChip("PNG Seq", selectedFormat) { selectedFormat = "PNG Seq" }
-                    MemoryChip("JPEG Seq", selectedFormat) { selectedFormat = "JPEG Seq" }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Text(text = "Aspect Ratio Presets", fontSize = 12.sp, color = TextSecondary)
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    MemoryChip("16:9", selectedAspect) { selectedAspect = "16:9" }
-                    MemoryChip("9:16", selectedAspect) { selectedAspect = "9:16" }
-                    MemoryChip("1:1", selectedAspect) { selectedAspect = "1:1" }
-                    MemoryChip("4:3", selectedAspect) { selectedAspect = "4:3" }
-                    MemoryChip("21:9", selectedAspect) { selectedAspect = "21:9" }
-                }
-            }
-        }
-
-        // GPU & CPU Output Acceleration & AI Watermark Eraser
-        item {
-            val editorProject by viewModel.editorProject.collectAsState()
-            var selectedGpuBackend by remember { mutableStateOf("Vulkan 1.3 High Throughput") }
-            var cpuThreads by remember { mutableStateOf(8f) }
-
-            SoraGlassCard(borderColor = NeonCyan) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(imageVector = Icons.Default.Speed, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(22.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(text = "GPU & CPU Output Acceleration", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    }
-                    SoraBadge(text = "TURBO RENDER", color = AccentGreen)
-                }
-
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = "Accelerate render export speeds using Vulkan 1.3 GPU hardware codecs and multi-threaded CPU chunk processing.",
-                    fontSize = 11.sp,
-                    color = TextSecondary
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(text = "⚡ GPU Hardware Acceleration", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                        Text(text = "Enable Vulkan 1.3 & MediaCodec EGL hardware encoding.", fontSize = 11.sp, color = TextSecondary)
-                    }
-                    Switch(
-                        checked = editorProject.gpuHardwareAcceleration,
-                        onCheckedChange = { viewModel.toggleGpuHardwareAcceleration(it) },
-                        colors = SwitchDefaults.colors(checkedThumbColor = NeonCyan, checkedTrackColor = NeonCyan.copy(alpha = 0.4f)),
-                        modifier = Modifier.testTag("setting_gpu_accel_switch")
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Text(text = "GPU Engine Backend Strategy", fontSize = 11.sp, color = NeonCyan)
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    MemoryChip("Vulkan 1.3", selectedGpuBackend) { selectedGpuBackend = "Vulkan 1.3" }
-                    MemoryChip("OpenCL", selectedGpuBackend) { selectedGpuBackend = "OpenCL" }
-                    MemoryChip("MediaCodec HW", selectedGpuBackend) { selectedGpuBackend = "MediaCodec HW" }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Text(text = "CPU Multi-Threading Allocation: ${cpuThreads.toInt()} Cores", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                Spacer(modifier = Modifier.height(4.dp))
-                Slider(
-                    value = cpuThreads,
-                    onValueChange = {
-                        cpuThreads = it
-                        viewModel.updateCpuThreads(it.toInt())
-                    },
-                    valueRange = 2f..16f,
-                    steps = 14,
-                    colors = SliderDefaults.colors(thumbColor = NeonCyan, activeTrackColor = NeonCyan, inactiveTrackColor = GlassSurfaceVariant)
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-                Divider(color = GlassSurfaceVariant)
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(imageVector = Icons.Default.CleaningServices, contentDescription = null, tint = ElectricPink, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(text = "🧹 AI Watermark Removal Mode", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(GlassSurface)
+                            .border(1.dp, CardBorder, RoundedCornerShape(8.dp))
+                    ) {
+                        presets.forEachIndexed { index, (title, desc, key) ->
+                            val isSelected = modelExecutionPreset == key
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { viewModel.setModelExecutionPreset(key) }
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = when (key) {
+                                            "AUTO_FAST" -> Icons.Default.AutoAwesome
+                                            "GPU_FAST" -> Icons.Default.FlashOn
+                                            else -> Icons.Default.Security
+                                        },
+                                        contentDescription = null,
+                                        tint = when (key) {
+                                            "AUTO_FAST" -> NeonCyan
+                                            "GPU_FAST" -> AccentYellow
+                                            else -> AccentGreen
+                                        },
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text(text = title, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                        Text(text = desc, fontSize = 11.sp, color = TextSecondary)
+                                    }
+                                }
+                                if (isSelected) {
+                                    Icon(imageVector = Icons.Default.Check, contentDescription = "Active", tint = NeonCyan)
+                                }
+                            }
+                            if (index < presets.size - 1) {
+                                HorizontalDivider(color = CardBorder.copy(alpha = 0.5f), thickness = 0.5.dp)
+                            }
                         }
-                        Text(text = "Automatically detect and erase watermarks from uploaded videos and rendered video clips.", fontSize = 11.sp, color = TextSecondary)
                     }
-                    Switch(
-                        checked = editorProject.globalWatermarkEraser,
-                        onCheckedChange = { viewModel.toggleGlobalWatermarkEraser(it) },
-                        colors = SwitchDefaults.colors(checkedThumbColor = ElectricPink, checkedTrackColor = ElectricPink.copy(alpha = 0.4f)),
-                        modifier = Modifier.testTag("setting_watermark_eraser_switch")
-                    )
-                }
-            }
-        }
 
-        // Storage Workspace & SD Card Cache
-        item {
-            SoraGlassCard {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(text = "SD Card / Storage Cache Workspace", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                        Text(
-                            text = "Use external SD card or fast internal storage as a temporary workspace for large GGUF model files and checkpoint frames.",
-                            fontSize = 12.sp,
-                            color = TextSecondary
+                    // Temperature Slider
+                    Column {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("🌡️ Temperature", fontSize = 12.sp, color = TextSecondary)
+                            Text(String.format("%.2f", settingsTemp), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = NeonCyan)
+                        }
+                        Text("Recommended max: 1.0", fontSize = 10.sp, color = TextSecondary)
+                        Slider(
+                            value = settingsTemp,
+                            onValueChange = { viewModel.setSettingsTemperature(it) },
+                            valueRange = 0.0f..2.0f,
+                            colors = SliderDefaults.colors(thumbColor = NeonCyan, activeTrackColor = NeonCyan, inactiveTrackColor = CardBorder)
                         )
                     }
 
-                    Switch(
-                        checked = useSdCard,
-                        onCheckedChange = { viewModel.setUseSdCardCache(it) },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = DeepDarkBg,
-                            checkedTrackColor = NeonCyan
-                        ),
-                        modifier = Modifier.testTag("sd_card_switch")
+                    // Max Tokens Slider
+                    Column {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("# Max Tokens", fontSize = 12.sp, color = TextSecondary)
+                            Text("$maxTokens", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = NeonCyan)
+                        }
+                        Text("Recommended max: 512", fontSize = 10.sp, color = TextSecondary)
+                        Slider(
+                            value = maxTokens.toFloat(),
+                            onValueChange = { viewModel.setSettingsMaxTokens(it.toInt()) },
+                            valueRange = 64f..1024f,
+                            steps = 14,
+                            colors = SliderDefaults.colors(thumbColor = NeonCyan, activeTrackColor = NeonCyan, inactiveTrackColor = CardBorder)
+                        )
+                    }
+
+                    // Context Size Slider
+                    Column {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("⚙️ Context Size", fontSize = 12.sp, color = TextSecondary)
+                            Text("$contextSize", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = NeonCyan)
+                        }
+                        Text("Recommended max: 2048", fontSize = 10.sp, color = TextSecondary)
+                        Slider(
+                            value = contextSize.toFloat(),
+                            onValueChange = { viewModel.setSettingsContextSize(it.toInt()) },
+                            valueRange = 256f..4096f,
+                            steps = 14,
+                            colors = SliderDefaults.colors(thumbColor = NeonCyan, activeTrackColor = NeonCyan, inactiveTrackColor = CardBorder)
+                        )
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // 7. IMAGE GENERATION PARAMETERS (Screenshot 3)
+        // ==========================================
+        item {
+            SoraGlassCard(borderColor = CardBorder) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("IMAGE GENERATION PARAMETERS", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextSecondary, letterSpacing = 1.sp)
+
+                    // Image Gen Steps
+                    Column {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(imageVector = Icons.Default.BurstMode, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Image Gen Steps", fontSize = 12.sp, color = TextSecondary)
+                            }
+                            Text("$imageGenSteps", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = NeonCyan)
+                        }
+                        Text("Recommended max: 8", fontSize = 10.sp, color = TextSecondary)
+                        Slider(
+                            value = imageGenSteps.toFloat(),
+                            onValueChange = { viewModel.setImageGenSteps(it.toInt()) },
+                            valueRange = 1f..8f,
+                            steps = 6,
+                            colors = SliderDefaults.colors(thumbColor = NeonCyan, activeTrackColor = NeonCyan, inactiveTrackColor = CardBorder)
+                        )
+                    }
+
+                    // Image Size presets
+                    Column {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("🖼️ Image Size", fontSize = 12.sp, color = TextSecondary)
+                            Text(imageSizePreset, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = NeonCyan)
+                        }
+                        Text("Auto recommended. Bigger size = better detail, but much slower and more memory use.", fontSize = 10.sp, color = TextSecondary)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(listOf("Auto", "256", "320", "384", "512")) { size ->
+                                val isSelected = imageSizePreset == size
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(if (isSelected) NeonCyan else GlassSurface)
+                                        .border(1.dp, if (isSelected) NeonCyan else CardBorder, RoundedCornerShape(6.dp))
+                                        .clickable { viewModel.setImageSizePreset(size) }
+                                        .padding(horizontal = 14.dp, vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        text = size,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected) DeepDarkBg else TextPrimary
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // GPU Safety Slider
+                    Column {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(imageVector = Icons.Default.Shield, contentDescription = null, tint = AccentGreen, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("GPU Safety", fontSize = 12.sp, color = TextSecondary)
+                            }
+                            Text("$gpuSafetyThresholdMb MB", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = NeonCyan)
+                        }
+                        Text("Models at or above this size use CPU. Smaller models can use GPU Experimental.", fontSize = 10.sp, color = TextSecondary)
+                        Slider(
+                            value = gpuSafetyThresholdMb.toFloat(),
+                            onValueChange = { viewModel.setGpuSafetyThresholdMb(it.toInt()) },
+                            valueRange = 512f..4096f,
+                            colors = SliderDefaults.colors(thumbColor = NeonCyan, activeTrackColor = NeonCyan, inactiveTrackColor = CardBorder)
+                        )
+                    }
+
+                    // Image Backend
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("⚙️ Image Backend", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Text("ADRENO - Vulkan (GPU)", fontSize = 10.sp, color = TextSecondary)
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (imageBackend == "CPU") NeonCyan else GlassSurface)
+                                    .border(1.dp, CardBorder, RoundedCornerShape(6.dp))
+                                    .clickable { viewModel.setImageBackend("CPU") }
+                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text("CPU", fontSize = 11.sp, color = if (imageBackend == "CPU") DeepDarkBg else TextPrimary, fontWeight = FontWeight.Bold)
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (imageBackend == "GPU") NeonCyan else GlassSurface)
+                                    .border(1.dp, CardBorder, RoundedCornerShape(6.dp))
+                                    .clickable { viewModel.setImageBackend("GPU") }
+                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text("⚡ GPU", fontSize = 11.sp, color = if (imageBackend == "GPU") DeepDarkBg else TextPrimary, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // 8. AI ENGINE CONFIGURATION (Screenshot 4)
+        // ==========================================
+        item {
+            SoraGlassCard(borderColor = NeonPurple.copy(alpha = 0.5f)) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Default.SmartToy, contentDescription = null, tint = NeonPurple, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text("AI Engine Configuration", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Text("Supports any OpenAI-compatible API endpoint", fontSize = 11.sp, color = TextSecondary)
+                        }
+                    }
+
+                    // API Key Field with reveal
+                    OutlinedTextField(
+                        value = apiEngineKey,
+                        onValueChange = { viewModel.setApiEngineKey(it) },
+                        label = { Text("API Key", fontSize = 11.sp) },
+                        visualTransformation = if (showApiKey) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { showApiKey = !showApiKey }) {
+                                Icon(
+                                    imageVector = if (showApiKey) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = "Toggle mask",
+                                    tint = TextSecondary
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = NeonCyan,
+                            unfocusedBorderColor = CardBorder,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        )
+                    )
+
+                    // API Base URL Field
+                    OutlinedTextField(
+                        value = apiBaseUrl,
+                        onValueChange = { viewModel.setApiBaseUrl(it) },
+                        label = { Text("API Base URL", fontSize = 11.sp) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = NeonCyan,
+                            unfocusedBorderColor = CardBorder,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        )
+                    )
+
+                    // Provider Presets
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(listOf("Local Server", "Ollama Cloud", "DeepSeek", "Groq", "NVIDIA", "Custom")) { preset ->
+                            val isSelected = apiProviderPreset == preset
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (isSelected) NeonPurple else GlassSurface)
+                                    .border(1.dp, if (isSelected) NeonCyan else CardBorder, RoundedCornerShape(6.dp))
+                                    .clickable { viewModel.setApiProviderPreset(preset) }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = preset,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) TextPrimary else TextSecondary
+                                )
+                            }
+                        }
+                    }
+
+                    // Model Name Field with Fetch Button
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = apiEngineModel,
+                            onValueChange = { viewModel.setApiEngineModel(it) },
+                            label = { Text("Model", fontSize = 11.sp) },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = NeonCyan,
+                                unfocusedBorderColor = CardBorder,
+                                focusedTextColor = TextPrimary,
+                                unfocusedTextColor = TextPrimary
+                            )
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = { viewModel.fetchApiEngineModels() },
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonPurple),
+                            shape = RoundedCornerShape(8.dp),
+                            enabled = !isFetchingModels
+                        ) {
+                            if (isFetchingModels) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = DeepDarkBg, strokeWidth = 2.dp)
+                            } else {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(imageVector = Icons.Default.CloudDownload, contentDescription = null, tint = DeepDarkBg, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Fetch", color = DeepDarkBg, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // 9. TUNING & BOUNDARIES (Screenshot 4)
+        // ==========================================
+        item {
+            SoraGlassCard(borderColor = CardBorder) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Default.Tune, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text("Tuning & Boundaries", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Text("Configure LLM agent parameters", fontSize = 11.sp, color = TextSecondary)
+                        }
+                    }
+
+                    // Disable Max Steps Toggle
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Disable Maximum Steps", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Text("⚠️ Can cause infinite loops.", fontSize = 11.sp, color = AccentYellow)
+                        }
+                        Switch(
+                            checked = disableMaxSteps,
+                            onCheckedChange = { viewModel.setDisableMaxSteps(it) },
+                            colors = SwitchDefaults.colors(checkedThumbColor = AccentYellow, checkedTrackColor = AccentYellow.copy(alpha = 0.4f))
+                        )
+                    }
+
+                    // Maximum Steps Per Task Slider
+                    Column {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Maximum Steps Per Task: $maxStepsPerTask", fontSize = 12.sp, color = TextSecondary)
+                        }
+                        Slider(
+                            value = maxStepsPerTask.toFloat(),
+                            onValueChange = { viewModel.setMaxStepsPerTask(it.toInt()) },
+                            valueRange = 1f..64f,
+                            steps = 62,
+                            colors = SliderDefaults.colors(thumbColor = NeonCyan, activeTrackColor = NeonCyan, inactiveTrackColor = CardBorder)
+                        )
+                    }
+
+                    // Context Limit Tokens Field
+                    OutlinedTextField(
+                        value = contextLimitTokens.toString(),
+                        onValueChange = { viewModel.setContextLimitTokens(it.toIntOrNull() ?: 1024) },
+                        label = { Text("Context Limit (Max Tokens)", fontSize = 11.sp) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = NeonCyan,
+                            unfocusedBorderColor = CardBorder,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        )
                     )
                 }
+            }
+        }
 
-                val profile = hardware
-                if (profile != null && profile.externalSdFreeGb > 0f) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(text = "SD Card Workspace Available: ${String.format("%.1f", profile.externalSdFreeGb)} GB Free", fontSize = 11.sp, color = AccentGreen)
+        // ==========================================
+        // 10. BEHAVIOR & EXTENSIONS (Screenshot 4 & 6)
+        // ==========================================
+        item {
+            SoraGlassCard(borderColor = CardBorder) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Default.Extension, contentDescription = null, tint = NeonPurple, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text("Behavior & Extensions", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Text("Additional feature flags and overlay options", fontSize = 11.sp, color = TextSecondary)
+                        }
+                    }
+
+                    // Use Screen Compression
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Use Screen Compression", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Text("Removes duplicate elements to save tokens", fontSize = 11.sp, color = TextSecondary)
+                        }
+                        Switch(
+                            checked = useScreenCompression,
+                            onCheckedChange = { viewModel.setUseScreenCompression(it) },
+                            colors = SwitchDefaults.colors(checkedThumbColor = NeonCyan, checkedTrackColor = NeonCyan.copy(alpha = 0.4f))
+                        )
+                    }
+
+                    // Send System Prompt
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Send System Prompt", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Text("Turn off for custom LoRA fine-tunes", fontSize = 11.sp, color = TextSecondary)
+                        }
+                        Switch(
+                            checked = sendSystemPrompt,
+                            onCheckedChange = { viewModel.setSendSystemPrompt(it) },
+                            colors = SwitchDefaults.colors(checkedThumbColor = NeonCyan, checkedTrackColor = NeonCyan.copy(alpha = 0.4f))
+                        )
+                    }
                 }
             }
         }
 
-        // Maintenance & Storage Actions
+        // ==========================================
+        // 11. TELEGRAM REMOTE ACCESS (Screenshot 6)
+        // ==========================================
         item {
-            SoraGlassCard {
-                Text(text = "System Maintenance Actions", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(text = "Perform workspace cleanup, re-index models, or check for AI engine updates.", fontSize = 12.sp, color = TextSecondary)
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = { viewModel.setSettingsStatus("Workspace cache cleared (3.2 GB freed)") },
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.weight(1f).testTag("clear_cache_btn")
-                    ) {
-                        Icon(imageVector = Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(14.dp), tint = AccentRed)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Clear Cache", fontSize = 11.sp, color = AccentRed)
+            SoraGlassCard(borderColor = CardBorder) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Default.Send, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text("Telegram Remote Access", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Text("Control your agent remotely from anywhere", fontSize = 11.sp, color = TextSecondary)
+                        }
                     }
 
-                    OutlinedButton(
-                        onClick = { viewModel.setSettingsStatus("Local storage re-indexed (12 models, 8 project renders verified)") },
+                    OutlinedTextField(
+                        value = telegramBotToken,
+                        onValueChange = { viewModel.setTelegramBotToken(it) },
+                        placeholder = { Text("Telegram Bot Token (e.g. 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11)", fontSize = 11.sp, color = TextSecondary) },
+                        modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.weight(1f)
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = NeonCyan,
+                            unfocusedBorderColor = CardBorder,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        )
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(imageVector = Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp), tint = NeonCyan)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Re-index Storage", fontSize = 11.sp, color = NeonCyan)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Enable Telegram Bot", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Text("Allows remote control via Telegram chat", fontSize = 11.sp, color = TextSecondary)
+                        }
+                        Switch(
+                            checked = isTelegramBotEnabled,
+                            onCheckedChange = {
+                                viewModel.setTelegramBotEnabled(it)
+                                if (it) {
+                                    Toast.makeText(context, "Telegram Bot listener active!", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            colors = SwitchDefaults.colors(checkedThumbColor = NeonCyan, checkedTrackColor = NeonCyan.copy(alpha = 0.4f))
+                        )
                     }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedButton(
-                    onClick = { viewModel.setSettingsStatus("Sora AI Engine v2.4.0 is up to date with Vulkan 1.3 acceleration") },
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(imageVector = Icons.Default.SystemUpdate, contentDescription = null, modifier = Modifier.size(14.dp), tint = AccentGreen)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Check AI Engine Updates", fontSize = 11.sp, color = AccentGreen)
                 }
             }
         }
 
-        // Privacy & Security
+        // ==========================================
+        // 12. SCREEN CONTROL (ACCESSIBILITY) (Screenshot 5 & 6)
+        // ==========================================
         item {
-            SoraGlassCard {
-                Text(text = "Security & Telemetry", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(text = "• 100% Offline-First (No analytics or cloud tracking by default)\n• Private local model directory\n• Encrypted project database", fontSize = 12.sp, color = TextSecondary)
+            SoraGlassCard(borderColor = CardBorder) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Default.TouchApp, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text("Screen Control (Accessibility)", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Text("Required to read screen and perform automated clicks", fontSize = 11.sp, color = TextSecondary)
+                        }
+                    }
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = CardDefaults.cardColors(containerColor = GlassSurface),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, CardBorder)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(imageVector = Icons.Default.VisibilityOff, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Screen Control is ready for automation service", fontSize = 12.sp, color = TextSecondary)
+                            }
+                            Text(
+                                "Tap below to open Accessibility Settings, then find \"PrivateAgent Screen Control\" and enable it.",
+                                fontSize = 11.sp,
+                                color = TextSecondary
+                            )
+                            Button(
+                                onClick = {
+                                    val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                    try {
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "Cannot open accessibility settings directly", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = GlassSurface),
+                                shape = RoundedCornerShape(6.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, NeonPurple)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(imageVector = Icons.Default.Settings, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Open Accessibility Settings", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // 13. APP PERMISSIONS (Screenshot 5 & 6)
+        // ==========================================
+        item {
+            SoraGlassCard(borderColor = CardBorder) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Default.Security, contentDescription = null, tint = AccentGreen, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text("App Permissions", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Text("Required for automation, microphone, and contacts", fontSize = 11.sp, color = TextSecondary)
+                        }
+                    }
+
+                    val permissionsList = listOf(
+                        Triple("Microphone", hasMicPermission) { micLauncher.launch(Manifest.permission.RECORD_AUDIO) },
+                        Triple("Contacts", hasContactsPermission) { contactsLauncher.launch(Manifest.permission.READ_CONTACTS) },
+                        Triple("Phone", hasPhonePermission) { phoneLauncher.launch(Manifest.permission.CALL_PHONE) },
+                        Triple("SMS", hasSmsPermission) { smsLauncher.launch(Manifest.permission.SEND_SMS) },
+                        Triple("Notifications", hasNotificationPermission) {
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                                notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            }
+                        }
+                    )
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(GlassSurface)
+                            .border(1.dp, CardBorder, RoundedCornerShape(8.dp))
+                    ) {
+                        permissionsList.forEachIndexed { index, (name, isGranted, onRequest) ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { if (!isGranted) onRequest() }
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = when (name) {
+                                            "Microphone" -> Icons.Default.Mic
+                                            "Contacts" -> Icons.Default.Contacts
+                                            "Phone" -> Icons.Default.Phone
+                                            "SMS" -> Icons.Default.Message
+                                            else -> Icons.Default.Notifications
+                                        },
+                                        contentDescription = null,
+                                        tint = if (isGranted) NeonCyan else TextSecondary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text(name, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                        Text(if (isGranted) "Granted" else "Tap to Grant", fontSize = 10.sp, color = if (isGranted) AccentGreen else AccentYellow)
+                                    }
+                                }
+                                if (isGranted) {
+                                    Icon(imageVector = Icons.Default.CheckCircle, contentDescription = "Granted", tint = AccentGreen, modifier = Modifier.size(18.dp))
+                                } else {
+                                    Button(
+                                        onClick = onRequest,
+                                        colors = ButtonDefaults.buttonColors(containerColor = NeonPurple),
+                                        shape = RoundedCornerShape(6.dp),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                        modifier = Modifier.height(28.dp)
+                                    ) {
+                                        Text("Grant", fontSize = 10.sp, color = DeepDarkBg, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                            if (index < permissionsList.size - 1) {
+                                HorizontalDivider(color = CardBorder.copy(alpha = 0.5f), thickness = 0.5.dp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // 14. EXECUTION LOGS (Screenshot 5)
+        // ==========================================
+        item {
+            SoraGlassCard(borderColor = CardBorder) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Execution logs", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Text("View history of tasks and token analytics", fontSize = 11.sp, color = TextSecondary)
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(GlassSurface)
+                            .border(1.dp, CardBorder, RoundedCornerShape(8.dp))
+                            .clickable { showTaskHistoryDialog = true }
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("View Task History", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Text("Access complete trace of execution steps", fontSize = 11.sp, color = TextSecondary)
+                        }
+                        Icon(imageVector = Icons.Default.ChevronRight, contentDescription = null, tint = TextSecondary)
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // 15. ABOUT & COMMUNITY (Screenshot 3 & 5)
+        // ==========================================
+        item {
+            SoraGlassCard(borderColor = CardBorder) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("About PrivateAgent / Sora Studio", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Text("Resources and repository access", fontSize = 11.sp, color = TextSecondary)
+
+                    val aboutLinks = listOf(
+                        Triple("Project Repository", "View source code on GitHub", "https://github.com"),
+                        Triple("Orailnoor on YouTube", "Subscribe for tutorials and updates", "https://youtube.com/@orailnoor"),
+                        Triple("Tech Jarves on YouTube", "Subscribe for tutorials and updates", "https://youtube.com/@techjarves")
+                    )
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(GlassSurface)
+                            .border(1.dp, CardBorder, RoundedCornerShape(8.dp))
+                    ) {
+                        aboutLinks.forEachIndexed { index, (title, desc, url) ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                        try {
+                                            context.startActivity(intent)
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Cannot open browser", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = if (title.contains("YouTube")) Icons.Default.PlayCircleFilled else Icons.Default.Code,
+                                        contentDescription = null,
+                                        tint = if (title.contains("YouTube")) AccentRed else NeonCyan,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text(title, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                        Text(desc, fontSize = 10.sp, color = TextSecondary)
+                                    }
+                                }
+                                Icon(imageVector = Icons.Default.OpenInNew, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(16.dp))
+                            }
+                            if (index < aboutLinks.size - 1) {
+                                HorizontalDivider(color = CardBorder.copy(alpha = 0.5f), thickness = 0.5.dp)
+                            }
+                        }
+                    }
+                }
             }
         }
     }
-}
 
-@Composable
-fun MemoryChip(label: String, selectedMode: String, onClick: () -> Unit) {
-    val isSelected = label == selectedMode
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (isSelected) NeonCyan else GlassSurface)
-            .clickable { onClick() }
-            .padding(horizontal = 10.dp, vertical = 6.dp)
-    ) {
-        Text(
-            text = label,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            color = if (isSelected) DeepDarkBg else TextPrimary
+    // Diagnostics Logs Dialog
+    if (showLogsDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogsDialog = false },
+            containerColor = DeepDarkBg,
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(imageVector = Icons.Default.Article, contentDescription = null, tint = NeonCyan)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Diagnostics & Engine Logs", color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("[INFO] Snapdragon NPU initialized successfully", fontSize = 11.sp, color = AccentGreen)
+                    Text("[INFO] Sora diffusion transformer graph bound to Adreno Vulkan", fontSize = 11.sp, color = NeonCyan)
+                    Text("[INFO] Offline Wake-Word acoustic listener standby", fontSize = 11.sp, color = TextSecondary)
+                    Text("[DEBUG] Quantization profile: Q4_K_M (optimal)", fontSize = 11.sp, color = TextSecondary)
+                    Text("[DEBUG] Local OpenAI REST endpoint bound to 0.0.0.0:8080", fontSize = 11.sp, color = TextSecondary)
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showLogsDialog = false }, colors = ButtonDefaults.buttonColors(containerColor = NeonCyan)) {
+                    Text("Close", color = DeepDarkBg)
+                }
+            }
+        )
+    }
+
+    // Task History Dialog
+    if (showTaskHistoryDialog) {
+        AlertDialog(
+            onDismissRequest = { showTaskHistoryDialog = false },
+            containerColor = DeepDarkBg,
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(imageVector = Icons.Default.History, contentDescription = null, tint = NeonCyan)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Execution Task History Trace", color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("• Step 1: Prompt ingestion & LLM token prefill (240ms)", fontSize = 12.sp, color = TextPrimary)
+                    Text("• Step 2: Latent video diffusion tensor rendering (1200ms)", fontSize = 12.sp, color = NeonCyan)
+                    Text("• Step 3: Fast MP4 hardware encoder pass (350ms)", fontSize = 12.sp, color = AccentGreen)
+                    Text("• Status: 100% completed with zero cloud network overhead", fontSize = 11.sp, color = TextSecondary)
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showTaskHistoryDialog = false }, colors = ButtonDefaults.buttonColors(containerColor = NeonCyan)) {
+                    Text("Done", color = DeepDarkBg)
+                }
+            }
         )
     }
 }
