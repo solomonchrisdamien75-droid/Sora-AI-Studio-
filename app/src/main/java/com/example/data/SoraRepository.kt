@@ -45,8 +45,9 @@ class SoraRepository(
     val modelQuantizationEngine = ModelQuantizationEngine(context, aiModelDao, quantizationHistoryDao)
     val offlineAssistantEngine = OfflineAssistantEngine(context, aiModelDao)
     val videoEditorEngine = VideoEditorEngine()
+    val realMediaSynthesisEngine = com.example.ai.generator.RealMediaSynthesisEngine(context)
     val soraCloudClient = SoraCloudClient(soraCloudDao)
-    val taskQueueManager = TaskQueueManager(generationJobDao, galleryDao, inferenceEngineManager, repoScope, onJobFinished)
+    val taskQueueManager = TaskQueueManager(generationJobDao, galleryDao, inferenceEngineManager, repoScope, onJobFinished, realMediaSynthesisEngine)
 
 
     fun getDeviceHardwareProfile(): DeviceHardwareProfile {

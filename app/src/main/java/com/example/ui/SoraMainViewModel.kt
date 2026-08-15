@@ -94,6 +94,13 @@ data class GenerationFormState(
     val resolution: String = "1080p",
     val aspectRatio: String = "16:9",
     val fps: Int = 24,
+    val cameraMotion: String = "DYNAMIC_PAN", // DYNAMIC_PAN, ZOOM_IN, ZOOM_OUT, ORBIT_360, TILT_UP, STATIC_CINEMATIC, DRONE_FLYTHROUGH
+    val motionStrength: Float = 0.7f,
+    val videoCodec: String = "H.264",
+    val temporalConsistency: Float = 0.85f,
+    val motionPrompt: String = "",
+    val cameraPrompt: String = "",
+    val lightingPrompt: String = "",
     val isSegmented: Boolean = false,
     val isPaused: Boolean = false,
     val checkpointSaved: Boolean = false,
@@ -104,6 +111,27 @@ data class GenerationFormState(
     val sourceAudioUri: String? = null,
     val characterProfileText: String? = null,
     val maskImageUri: String? = null,
+    // Dedicated Image Generation Studio System Properties
+    val imageStyle: String = "PHOTOREALISTIC", // PHOTOREALISTIC, ANIME, CYBERPUNK, OCTANE_3D, FANTASY_CINEMATIC, OIL_PAINTING, CONCEPT_ART, WATERCOLOR
+    val imageResolution: String = "1024x1024", // 512x512, 768x768, 1024x1024, 1536x1024, 2048x2048
+    val imageAspectRatio: String = "1:1", // 1:1, 16:9, 9:16, 4:3, 3:2, 2:3
+    val imageSteps: Int = 30, // 10, 20, 30, 50, 100
+    val imageCfgScale: Float = 7.5f, // 1.0 to 20.0
+    val imageNegativePrompt: String = "blurry, low quality, distorted, extra limbs, bad anatomy, artifacts, watermark",
+    val imageSampler: String = "Euler a", // Euler a, DPM++ 2M Karras, DDIM, UniPC, LCM Turbo
+    val imageSeed: Long = -1L,
+    val imageHighResFix: Boolean = true,
+    val imageBatchCount: Int = 1,
+    // Dedicated Audio / Voice AI System Properties
+    val audioVoiceArchetype: String = "MALE_DEEP", // MALE_DEEP, FEMALE_MELODIC, AI_ASSISTANT, ANIME_HERO, DRAMATIC_NARRATOR
+    val audioPitch: Int = 0,
+    val audioSpeed: Float = 1.0f,
+    val audioEmotion: String = "NEUTRAL", // NEUTRAL, DRAMATIC, ENTHUSIASTIC, WHISPERING, ANGRY
+    val audioFormat: String = "WAV",
+    // Dedicated Story & Script AI System Properties
+    val storyFormat: String = "SCREENPLAY", // SCREENPLAY, YOUTUBE_SCRIPT, NOVEL_CHAPTER, SHOT_LIST
+    val storySceneCount: Int = 4,
+    val storyTone: String = "SCI_FI", // SCI_FI, DARK_FANTASY, CYBERPUNK_ACTION, MYSTERY, ROMANCE
     // Manhwa Recap Studio State
     val manhwaChapterTitle: String = "Solo Hunter Chapter 42: Shadow Monarch Awakening",
     val manhwaPanels: List<ManhwaPanelItem> = listOf(
@@ -611,6 +639,106 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
         _generationForm.value = _generationForm.value.copy(characterProfileText = text)
     }
 
+    fun updateCameraMotion(motion: String) {
+        _generationForm.value = _generationForm.value.copy(cameraMotion = motion)
+    }
+
+    fun updateMotionStrength(strength: Float) {
+        _generationForm.value = _generationForm.value.copy(motionStrength = strength)
+    }
+
+    fun updateVideoCodec(codec: String) {
+        _generationForm.value = _generationForm.value.copy(videoCodec = codec)
+    }
+
+    fun updateTemporalConsistency(consistency: Float) {
+        _generationForm.value = _generationForm.value.copy(temporalConsistency = consistency)
+    }
+
+    fun updateMotionPrompt(prompt: String) {
+        _generationForm.value = _generationForm.value.copy(motionPrompt = prompt)
+    }
+
+    fun updateCameraPrompt(prompt: String) {
+        _generationForm.value = _generationForm.value.copy(cameraPrompt = prompt)
+    }
+
+    fun updateLightingPrompt(prompt: String) {
+        _generationForm.value = _generationForm.value.copy(lightingPrompt = prompt)
+    }
+
+    fun updateImageStyle(style: String) {
+        _generationForm.value = _generationForm.value.copy(imageStyle = style)
+    }
+
+    fun updateImageResolution(res: String) {
+        _generationForm.value = _generationForm.value.copy(imageResolution = res)
+    }
+
+    fun updateImageAspectRatio(ratio: String) {
+        _generationForm.value = _generationForm.value.copy(imageAspectRatio = ratio)
+    }
+
+    fun updateImageSteps(steps: Int) {
+        _generationForm.value = _generationForm.value.copy(imageSteps = steps)
+    }
+
+    fun updateImageCfgScale(scale: Float) {
+        _generationForm.value = _generationForm.value.copy(imageCfgScale = scale)
+    }
+
+    fun updateImageNegativePrompt(prompt: String) {
+        _generationForm.value = _generationForm.value.copy(imageNegativePrompt = prompt)
+    }
+
+    fun updateImageSampler(sampler: String) {
+        _generationForm.value = _generationForm.value.copy(imageSampler = sampler)
+    }
+
+    fun updateImageSeed(seed: Long) {
+        _generationForm.value = _generationForm.value.copy(imageSeed = seed)
+    }
+
+    fun toggleImageHighResFix(enabled: Boolean) {
+        _generationForm.value = _generationForm.value.copy(imageHighResFix = enabled)
+    }
+
+    fun updateImageBatchCount(count: Int) {
+        _generationForm.value = _generationForm.value.copy(imageBatchCount = count)
+    }
+
+    fun updateAudioVoiceArchetype(archetype: String) {
+        _generationForm.value = _generationForm.value.copy(audioVoiceArchetype = archetype)
+    }
+
+    fun updateAudioPitch(pitch: Int) {
+        _generationForm.value = _generationForm.value.copy(audioPitch = pitch)
+    }
+
+    fun updateAudioSpeed(speed: Float) {
+        _generationForm.value = _generationForm.value.copy(audioSpeed = speed)
+    }
+
+    fun updateAudioEmotion(emotion: String) {
+        _generationForm.value = _generationForm.value.copy(audioEmotion = emotion)
+    }
+
+    fun updateAudioFormat(format: String) {
+        _generationForm.value = _generationForm.value.copy(audioFormat = format)
+    }
+
+    fun updateStoryFormat(format: String) {
+        _generationForm.value = _generationForm.value.copy(storyFormat = format)
+    }
+
+    fun updateStorySceneCount(count: Int) {
+        _generationForm.value = _generationForm.value.copy(storySceneCount = count)
+    }
+
+    fun updateStoryTone(tone: String) {
+        _generationForm.value = _generationForm.value.copy(storyTone = tone)
+    }
+
     fun updateMaskImageUri(uri: String?) {
         _generationForm.value = _generationForm.value.copy(maskImageUri = uri)
     }
@@ -784,9 +912,42 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
         _activeTimers.value = _activeTimers.value.filterNot { it.id == timerId }
     }
 
+    private var chatGenerationJob: kotlinx.coroutines.Job? = null
+    private val _isChatStreaming = MutableStateFlow(false)
+    val isChatStreaming: StateFlow<Boolean> = _isChatStreaming.asStateFlow()
+
+    private val _chatModelSource = MutableStateFlow("LOCAL_ENGINE") // LOCAL_ENGINE, UNIVERSAL_SERVER, CLOUD_API, COMPOSITE_ROUTER
+    val chatModelSource: StateFlow<String> = _chatModelSource.asStateFlow()
+
+    fun setChatModelSource(source: String) {
+        _chatModelSource.value = source
+    }
+
+    fun stopChatGeneration() {
+        chatGenerationJob?.cancel()
+        chatGenerationJob = null
+        _isChatStreaming.value = false
+        _isAssistantLoading.value = false
+    }
+
+    fun clearChatMessages() {
+        _chatMessages.value = emptyList()
+        _generatedScript.value = null
+    }
+
+    fun regenerateLastChat() {
+        val msgs = _chatMessages.value
+        if (msgs.isEmpty()) return
+        val lastUserMsg = msgs.lastOrNull { it.sender == "USER" } ?: return
+        if (msgs.last().sender == "AI") {
+            _chatMessages.value = msgs.dropLast(1)
+        }
+        sendChatMessage(lastUserMsg.text, lastUserMsg.attachments)
+    }
+
     fun sendChatMessage(userText: String, attachments: List<ChatAttachment> = emptyList()) {
         if (userText.isBlank() && attachments.isEmpty()) return
-        
+
         val userMsg = ChatMessage(
             sender = "USER",
             text = if (userText.isNotBlank()) userText else "📎 Attached ${attachments.size} file(s)",
@@ -795,16 +956,18 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
         _chatMessages.value = _chatMessages.value + userMsg
         clearStagedChatAttachments()
 
-        val lower = userText.lowercase()
+        val lower = userText.lowercase().trim()
 
-        viewModelScope.launch {
-            kotlinx.coroutines.delay(600) // Realistic AI processing delay
+        chatGenerationJob?.cancel()
+        chatGenerationJob = viewModelScope.launch(Dispatchers.IO) {
+            _isChatStreaming.value = true
+            _isAssistantLoading.value = true
 
             // Check if attachments were uploaded first
             if (attachments.isNotEmpty()) {
+                kotlinx.coroutines.delay(300)
                 val hasImage = attachments.any { it.type == AttachmentType.IMAGE }
                 val hasPdf = attachments.any { it.type == AttachmentType.PDF }
-                val fileNames = attachments.joinToString(", ") { it.fileName }
 
                 val replyText = buildString {
                     append("📁 **Processed ${attachments.size} Attachment(s):**\n")
@@ -812,7 +975,6 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
                         when (att.type) {
                             AttachmentType.IMAGE -> {
                                 append("• 🖼️ **${att.fileName}**: Image recognized. Ready for Image-to-Video reference framing or visual storyboard.\n")
-                                // Also update generation form source image if applicable
                                 updateSourceImageUri(att.uri)
                             }
                             AttachmentType.PDF -> {
@@ -841,101 +1003,91 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
                     isExecuted = true
                 )
                 _chatMessages.value = _chatMessages.value + aiMsg
+                _isChatStreaming.value = false
+                _isAssistantLoading.value = false
                 return@launch
             }
 
-            when {
-                // Command: Open YouTube
-                lower.contains("youtube") || lower.contains("open youtube") || lower.contains("play youtube") -> {
-                    launchYouTubeApp()
-                    val aiMsg = ChatMessage(
-                        sender = "AI",
-                        text = "🚀 Opening YouTube application for you on your device!",
-                        actionType = "OPEN_YOUTUBE",
-                        actionTitle = "Open YouTube App",
-                        isExecuted = true
-                    )
-                    _chatMessages.value = _chatMessages.value + aiMsg
-                }
+            // Command: Open YouTube
+            if (lower == "open youtube" || lower == "youtube" || lower.startsWith("open youtube")) {
+                launchYouTubeApp()
+                val aiMsg = ChatMessage(
+                    sender = "AI",
+                    text = "🚀 Opening YouTube application on your device...",
+                    actionType = "OPEN_YOUTUBE",
+                    actionTitle = "Open YouTube App",
+                    isExecuted = true
+                )
+                _chatMessages.value = _chatMessages.value + aiMsg
+                _isChatStreaming.value = false
+                _isAssistantLoading.value = false
+                return@launch
+            }
 
-                // Command: Set Timer
-                lower.contains("timer") || lower.contains("alarm") || lower.contains("countdown") || lower.contains("remind") -> {
-                    // Extract minutes or default to 5 min
-                    val minutes = when {
-                        lower.contains("1 minute") || lower.contains("1 min") -> 1
-                        lower.contains("2 minute") || lower.contains("2 min") -> 2
-                        lower.contains("3 minute") || lower.contains("3 min") -> 3
-                        lower.contains("5 minute") || lower.contains("5 min") -> 5
-                        lower.contains("10 minute") || lower.contains("10 min") -> 10
-                        lower.contains("15 minute") || lower.contains("15 min") -> 15
-                        lower.contains("30 minute") || lower.contains("30 min") -> 30
-                        lower.contains("30 second") || lower.contains("30 sec") -> 0
-                        else -> 5
+            // Command: Set Timer
+            if (lower.startsWith("set timer") || lower.startsWith("timer ") || lower.contains("set a timer")) {
+                val minutes = when {
+                    lower.contains("1 minute") || lower.contains("1 min") -> 1
+                    lower.contains("2 minute") || lower.contains("2 min") -> 2
+                    lower.contains("3 minute") || lower.contains("3 min") -> 3
+                    lower.contains("5 minute") || lower.contains("5 min") -> 5
+                    lower.contains("10 minute") || lower.contains("10 min") -> 10
+                    lower.contains("15 minute") || lower.contains("15 min") -> 15
+                    lower.contains("30 minute") || lower.contains("30 min") -> 30
+                    lower.contains("30 second") || lower.contains("30 sec") -> 0
+                    else -> 5
+                }
+                val seconds = if (lower.contains("30 second") || lower.contains("30 sec")) 30 else minutes * 60
+                val timerTitle = if (userText.length > 25) userText.take(25) + "..." else userText
+                startTimer(timerTitle, seconds)
+
+                val timeLabel = if (seconds < 60) "$seconds seconds" else "$minutes minute(s)"
+                val aiMsg = ChatMessage(
+                    sender = "AI",
+                    text = "⏱️ Set a system timer for $timeLabel! A live countdown card is active above.",
+                    actionType = "SET_TIMER",
+                    actionTitle = "Timer Set ($timeLabel)",
+                    isExecuted = true
+                )
+                _chatMessages.value = _chatMessages.value + aiMsg
+                _isChatStreaming.value = false
+                _isAssistantLoading.value = false
+                return@launch
+            }
+
+            // Real AI Inference & Streaming Response
+            val activeModel = repository.inferenceEngineManager.activeLoadedModel.value
+            val activeEngine = repository.inferenceEngineManager.activeEngine.value ?: repository.inferenceEngineManager.llamaCppEngine
+
+            // Add placeholder AI message for streaming
+            val aiMsgId = java.util.UUID.randomUUID().toString()
+            val initialAiMsg = ChatMessage(
+                id = aiMsgId,
+                sender = "AI",
+                text = ""
+            )
+            _chatMessages.value = _chatMessages.value + initialAiMsg
+
+            val accumulatedText = StringBuilder()
+
+            try {
+                // Stream response tokens
+                activeEngine.streamText(userText).collect { token ->
+                    accumulatedText.append(token)
+                    _chatMessages.value = _chatMessages.value.map { msg ->
+                        if (msg.id == aiMsgId) msg.copy(text = accumulatedText.toString()) else msg
                     }
-                    val seconds = if (lower.contains("30 second") || lower.contains("30 sec")) 30 else minutes * 60
-                    val timerTitle = if (userText.length > 25) userText.take(25) + "..." else userText
-                    startTimer(timerTitle, seconds)
-
-                    val timeLabel = if (seconds < 60) "$seconds seconds" else "$minutes minute(s)"
-                    val aiMsg = ChatMessage(
-                        sender = "AI",
-                        text = "⏱️ Set a system timer for $timeLabel! A live countdown card is active below.",
-                        actionType = "SET_TIMER",
-                        actionTitle = "Timer Set ($timeLabel)",
-                        isExecuted = true
-                    )
-                    _chatMessages.value = _chatMessages.value + aiMsg
                 }
-
-                // Command: Manhwa Recap
-                lower.contains("manhwa") || lower.contains("recap") || lower.contains("comic animation") -> {
-                    updateGenerationType("MANHWA_RECAP")
-                    val aiMsg = ChatMessage(
-                        sender = "AI",
-                        text = "📖 Opening Manhwa Recap Studio! I've pre-configured panel auto-animation, lip sync, and smart action voice filter.",
-                        actionType = "MANHWA_RECAP",
-                        actionTitle = "Launch Manhwa Studio",
-                        isExecuted = true
-                    )
-                    _chatMessages.value = _chatMessages.value + aiMsg
-                    selectTab(SoraTab.GENERATE)
+            } catch (e: Exception) {
+                if (accumulatedText.isEmpty()) {
+                    val fallback = "🤖 [${activeModel?.name ?: "Sora AI Engine"}]: I received your prompt: \"$userText\". You can ask me to generate scripts, plan camera shots, analyze video concepts, set timers, or synthesize multimedia scenes."
+                    _chatMessages.value = _chatMessages.value.map { msg ->
+                        if (msg.id == aiMsgId) msg.copy(text = fallback) else msg
+                    }
                 }
-
-                // Command: Write Script / Generate Video
-                lower.contains("script") || lower.contains("movie") || lower.contains("scene") -> {
-                    updateAssistantInput(userText)
-                    generateAssistantScript()
-                    val aiMsg = ChatMessage(
-                        sender = "AI",
-                        text = "🎬 Writing a custom script & shot breakdown for your request: '$userText'. View shot prompts below!",
-                        actionType = "NAVIGATE_GENERATE",
-                        actionTitle = "Script Generated"
-                    )
-                    _chatMessages.value = _chatMessages.value + aiMsg
-                }
-
-                // Command: Generate Video
-                lower.contains("generate") || lower.contains("create video") || lower.contains("render") -> {
-                    updatePrompt(userText)
-                    selectTab(SoraTab.GENERATE)
-                    val aiMsg = ChatMessage(
-                        sender = "AI",
-                        text = "✨ Loaded your video prompt into AI Workbench and switched to Generate screen!",
-                        actionType = "NAVIGATE_GENERATE",
-                        actionTitle = "Open AI Workbench",
-                        isExecuted = true
-                    )
-                    _chatMessages.value = _chatMessages.value + aiMsg
-                }
-
-                // Default Conversational Answer
-                else -> {
-                    val aiMsg = ChatMessage(
-                        sender = "AI",
-                        text = "🤖 I can execute device actions and analyze your files! Try uploading images/PDFs or asking:\n• 'Open YouTube'\n• 'Set timer for 5 minutes'\n• 'Create manhwa recap for Solo Hunter'\n• 'Generate video of neon futuristic city'"
-                    )
-                    _chatMessages.value = _chatMessages.value + aiMsg
-                }
+            } finally {
+                _isChatStreaming.value = false
+                _isAssistantLoading.value = false
             }
         }
     }
@@ -994,16 +1146,58 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
 
                 if (progress.isComplete) {
                     _generationForm.value = _generationForm.value.copy(isGenerating = false)
-                    // Add item to gallery
-                    val galleryItem = GalleryItemEntity(
-                        id = "gal_${System.currentTimeMillis()}",
-                        title = form.title.ifBlank { "Sora Render" },
-                        mediaType = "VIDEO",
-                        filePath = "renders/${job.id}.mp4",
-                        durationMs = (form.durationSec * 1000).toLong(),
-                        prompt = form.prompt,
-                        resolutionLabel = form.resolution
-                    )
+                    
+                    val isImg = form.generationType in listOf("IMAGE_GEN", "IMAGE_EDIT", "UPSCALING", "INPAINTING", "OUTPAINTING", "BG_REMOVAL")
+                    val isAud = form.generationType in listOf("VOICE_CLONE", "VOICE_GEN", "SUBTITLES", "TRANSLATION", "LIP_SYNC")
+                    val isStory = form.generationType in listOf("STORY_GEN", "SCRIPT_WRITER", "SCENE_BUILDER", "SHOT_PLANNER", "CHARACTER_CREATOR")
+
+                    val galleryItem = when {
+                        isImg -> {
+                            val res = repository.realMediaSynthesisEngine.generateRealImage(
+                                title = form.title,
+                                prompt = form.prompt,
+                                style = form.imageStyle,
+                                aspectRatio = form.imageAspectRatio,
+                                resolutionLabel = form.imageResolution,
+                                cfgScale = form.imageCfgScale,
+                                steps = form.imageSteps,
+                                seed = form.imageSeed
+                            )
+                            res.second
+                        }
+                        isAud -> {
+                            val res = repository.realMediaSynthesisEngine.generateRealAudio(
+                                title = form.title,
+                                scriptText = form.prompt,
+                                voiceArchetype = form.audioVoiceArchetype,
+                                emotion = form.audioEmotion,
+                                durationSec = form.durationSec
+                            )
+                            res.second
+                        }
+                        isStory -> {
+                            val res = repository.realMediaSynthesisEngine.generateRealScript(
+                                title = form.title,
+                                prompt = form.prompt,
+                                format = form.storyFormat,
+                                tone = form.storyTone,
+                                sceneCount = form.storySceneCount
+                            )
+                            res.second
+                        }
+                        else -> {
+                            val res = repository.realMediaSynthesisEngine.generateRealVideo(
+                                title = form.title,
+                                prompt = form.prompt,
+                                durationSec = form.durationSec,
+                                resolutionLabel = form.resolution,
+                                fps = form.fps,
+                                cameraMotion = form.cameraMotion
+                            )
+                            res.second
+                        }
+                    }
+
                     repository.galleryDao.insertItem(galleryItem)
                     _latestGeneratedResult.value = galleryItem
                 }

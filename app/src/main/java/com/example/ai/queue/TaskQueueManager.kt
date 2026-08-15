@@ -30,7 +30,8 @@ class TaskQueueManager(
     private val galleryDao: GalleryDao,
     private val inferenceEngineManager: InferenceEngineManager,
     private val scope: CoroutineScope,
-    private val onJobFinishedCallback: (GalleryItemEntity) -> Unit = {}
+    private val onJobFinishedCallback: (GalleryItemEntity) -> Unit = {},
+    private val realMediaSynthesisEngine: com.example.ai.generator.RealMediaSynthesisEngine? = null
 ) {
     private val _isQueueProcessing = MutableStateFlow(false)
     val isQueueProcessing: StateFlow<Boolean> = _isQueueProcessing.asStateFlow()
@@ -240,15 +241,63 @@ class TaskQueueManager(
                         generationJobDao.updateJob(updated)
 
                         if (progress.isComplete) {
-                            val galleryItem = GalleryItemEntity(
-                                id = "gal_${System.currentTimeMillis()}",
-                                title = job.title,
-                                mediaType = "VIDEO",
-                                filePath = "renders/${job.id}.mp4",
-                                durationMs = (job.durationSeconds * 1000).toLong(),
-                                prompt = job.prompt,
-                                resolutionLabel = job.resolution
-                            )
+                            val galleryItem = if (realMediaSynthesisEngine != null) {
+                                val isImg = job.generationType in listOf("IMAGE_GEN", "IMAGE_EDIT", "UPSCALING", "INPAINTING", "OUTPAINTING", "BG_REMOVAL")
+                                val isAud = job.generationType in listOf("VOICE_CLONE", "VOICE_GEN", "SUBTITLES", "TRANSLATION", "LIP_SYNC")
+                                val isStory = job.generationType in listOf("STORY_GEN", "SCRIPT_WRITER", "SCENE_BUILDER", "SHOT_PLANNER", "CHARACTER_CREATOR")
+
+                                when {
+                                    isImg -> {
+                                        val res = realMediaSynthesisEngine.generateRealImage(
+                                            title = job.title,
+                                            prompt = job.prompt,
+                                            style = "PHOTOREALISTIC",
+                                            aspectRatio = "1:1",
+                                            resolutionLabel = job.resolution
+                                        )
+                                        res.second
+                                    }
+                                    isAud -> {
+                                        val res = realMediaSynthesisEngine.generateRealAudio(
+                                            title = job.title,
+                                            scriptText = job.prompt,
+                                            voiceArchetype = "AI_ASSISTANT",
+                                            emotion = "NEUTRAL",
+                                            durationSec = job.durationSeconds
+                                        )
+                                        res.second
+                                    }
+                                    isStory -> {
+                                        val res = realMediaSynthesisEngine.generateRealScript(
+                                            title = job.title,
+                                            prompt = job.prompt,
+                                            format = "SCREENPLAY",
+                                            tone = "CINEMATIC"
+                                        )
+                                        res.second
+                                    }
+                                    else -> {
+                                        val res = realMediaSynthesisEngine.generateRealVideo(
+                                            title = job.title,
+                                            prompt = job.prompt,
+                                            durationSec = job.durationSeconds,
+                                            resolutionLabel = job.resolution,
+                                            fps = job.fps.toInt()
+                                        )
+                                        res.second
+                                    }
+                                }
+                            } else {
+                                GalleryItemEntity(
+                                    id = "gal_${System.currentTimeMillis()}",
+                                    title = job.title,
+                                    mediaType = if (job.generationType.contains("IMAGE")) "IMAGE" else "VIDEO",
+                                    filePath = "renders/${job.id}.mp4",
+                                    durationMs = (job.durationSeconds * 1000).toLong(),
+                                    prompt = job.prompt,
+                                    resolutionLabel = job.resolution
+                                )
+                            }
                             galleryDao.insertItem(galleryItem)
                             onJobFinishedCallback(galleryItem)
                         }

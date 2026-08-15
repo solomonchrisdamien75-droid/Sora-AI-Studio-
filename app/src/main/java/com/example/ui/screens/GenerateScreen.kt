@@ -31,6 +31,7 @@ import com.example.data.GalleryItemEntity
 import com.example.ui.SoraMainViewModel
 import com.example.ui.SoraTab
 import com.example.ui.components.*
+import com.example.ui.components.generation.*
 import com.example.ui.theme.*
 
 @Composable
@@ -808,90 +809,19 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
             }
         }
 
-        // Quality Modes (Fast Mode, Balanced Mode, Cinema Mode)
+        val isImageMode = form.generationType in listOf("IMAGE_GEN", "IMAGE_EDIT", "INPAINTING", "OUTPAINTING", "BG_REMOVAL")
+        val isVideoMode = form.generationType in listOf("TEXT_TO_VIDEO", "IMAGE_TO_VIDEO", "VIDEO_TO_VIDEO", "VIDEO_ENHANCE", "MOTION_TRANSFER", "LIP_SYNC")
+        val isAudioMode = form.generationType in listOf("VOICE_CLONE", "VOICE_GEN", "SUBTITLES", "TRANSLATION")
+        val isStoryMode = form.generationType in listOf("STORY_GEN", "SCRIPT_WRITER", "SCENE_BUILDER", "SHOT_PLANNER", "CHARACTER_CREATOR")
+
+        // Render Dedicated Studio UI Section
         item {
-            Text(text = "Quality Mode", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                QualityModeCard(
-                    title = "Fast Mode",
-                    desc = "Lowest RAM (LiteRT)",
-                    modeKey = "FAST",
-                    selectedMode = form.mode,
-                    color = NeonCyan,
-                    modifier = Modifier.weight(1f)
-                ) { viewModel.updateMode("FAST") }
-
-                QualityModeCard(
-                    title = "Balanced",
-                    desc = "Medium Quality (ONNX)",
-                    modeKey = "BALANCED",
-                    selectedMode = form.mode,
-                    color = NeonPurple,
-                    modifier = Modifier.weight(1f)
-                ) { viewModel.updateMode("BALANCED") }
-
-                QualityModeCard(
-                    title = "Cinema Mode",
-                    desc = "High Quality (Vulkan)",
-                    modeKey = "CINEMA",
-                    selectedMode = form.mode,
-                    color = ElectricPink,
-                    modifier = Modifier.weight(1f)
-                ) { viewModel.updateMode("CINEMA") }
-            }
-        }
-
-        // Duration, Aspect Ratio & Resolution Selector
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                // Duration selection (1s to Several Hours)
-                Text(text = "Target Video Duration", fontSize = 13.sp, color = TextSecondary, fontWeight = FontWeight.Bold)
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    item { DurationChip("1s", 1, form.durationSec) { viewModel.updateDurationWithLabel("1 second", 1) } }
-                    item { DurationChip("5s", 5, form.durationSec) { viewModel.updateDurationWithLabel("5 seconds", 5) } }
-                    item { DurationChip("10s", 10, form.durationSec) { viewModel.updateDurationWithLabel("10 seconds", 10) } }
-                    item { DurationChip("30s", 30, form.durationSec) { viewModel.updateDurationWithLabel("30 seconds", 30) } }
-                    item { DurationChip("1 min", 60, form.durationSec) { viewModel.updateDurationWithLabel("1 minute", 60) } }
-                    item { DurationChip("5 min", 300, form.durationSec) { viewModel.updateDurationWithLabel("5 minutes", 300) } }
-                    item { DurationChip("10 min", 600, form.durationSec) { viewModel.updateDurationWithLabel("10 minutes", 600) } }
-                    item { DurationChip("30 min", 1800, form.durationSec) { viewModel.updateDurationWithLabel("30 minutes", 1800) } }
-                    item { DurationChip("1 hour", 3600, form.durationSec) { viewModel.updateDurationWithLabel("1 hour", 3600) } }
-                    item { DurationChip("Several Hours", 10800, form.durationSec) { viewModel.updateDurationWithLabel("3 hours (Segmented)", 10800) } }
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // Aspect Ratio
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(text = "Aspect Ratio", fontSize = 13.sp, color = TextSecondary)
-                        Spacer(modifier = Modifier.height(6.dp))
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            item { ResolutionChip("16:9", form.aspectRatio) { viewModel.updateAspectRatio("16:9") } }
-                            item { ResolutionChip("9:16", form.aspectRatio) { viewModel.updateAspectRatio("9:16") } }
-                            item { ResolutionChip("1:1", form.aspectRatio) { viewModel.updateAspectRatio("1:1") } }
-                            item { ResolutionChip("4:3", form.aspectRatio) { viewModel.updateAspectRatio("4:3") } }
-                            item { ResolutionChip("21:9", form.aspectRatio) { viewModel.updateAspectRatio("21:9") } }
-                        }
-                    }
-
-                    // Resolution
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(text = "Resolution", fontSize = 13.sp, color = TextSecondary)
-                        Spacer(modifier = Modifier.height(6.dp))
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            item { ResolutionChip("480p", form.resolution) { viewModel.updateResolution("480p") } }
-                            item { ResolutionChip("720p", form.resolution) { viewModel.updateResolution("720p") } }
-                            item { ResolutionChip("1080p", form.resolution) { viewModel.updateResolution("1080p") } }
-                            item { ResolutionChip("4K", form.resolution) { viewModel.updateResolution("4K") } }
-                        }
-                    }
-                }
+            when {
+                isImageMode -> ImageGenerationStudio(viewModel = viewModel, form = form)
+                isVideoMode -> VideoGenerationStudio(viewModel = viewModel, form = form)
+                isAudioMode -> AudioGenerationStudio(viewModel = viewModel, form = form)
+                isStoryMode -> StoryGenerationStudio(viewModel = viewModel, form = form)
+                else -> VideoGenerationStudio(viewModel = viewModel, form = form)
             }
         }
 
