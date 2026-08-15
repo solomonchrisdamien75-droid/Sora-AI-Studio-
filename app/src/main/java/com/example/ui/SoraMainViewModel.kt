@@ -27,6 +27,7 @@ import kotlinx.coroutines.launch
 
 enum class SoraTab(val title: String, val route: String) {
     HOME("Home", "home"),
+    MANHWA_STUDIO("Manhwa Studio", "manhwa_studio"),
     GENERATE("Generate", "generate"),
     QUEUE("Task Queue", "queue"),
     WAKE_WORD("Sora Voice", "wake_word"),

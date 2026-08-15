@@ -14,4 +14,6 @@ val TextSecondary = Color(0xFF94A3B8)
 val AccentGreen = Color(0xFF10B981)
 val AccentYellow = Color(0xFFF59E0B)
 val AccentRed = Color(0xFFEF4444)
+val GlassBorder = CardBorder
+val WarningOrange = AccentYellow
 

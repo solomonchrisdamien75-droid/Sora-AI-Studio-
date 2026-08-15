@@ -205,13 +205,12 @@ fun HomeScreen(viewModel: SoraMainViewModel) {
                     }
                 )
                 QuickActionCard(
-                    title = "Manhwa Recap",
+                    title = "Manhwa Studio",
                     icon = Icons.Default.MovieFilter,
                     color = ElectricPink,
                     modifier = Modifier.weight(1f).testTag("quick_manhwa_recap"),
                     onClick = {
-                        viewModel.updateGenerationType("MANHWA_RECAP")
-                        viewModel.selectTab(SoraTab.GENERATE)
+                        viewModel.selectTab(SoraTab.MANHWA_STUDIO)
                     }
                 )
                 QuickActionCard(
@@ -250,8 +249,7 @@ fun HomeScreen(viewModel: SoraMainViewModel) {
                     Spacer(modifier = Modifier.width(12.dp))
                     Button(
                         onClick = {
-                            viewModel.updateGenerationType("MANHWA_RECAP")
-                            viewModel.selectTab(SoraTab.GENERATE)
+                            viewModel.selectTab(SoraTab.MANHWA_STUDIO)
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = ElectricPink),
                         shape = RoundedCornerShape(10.dp),

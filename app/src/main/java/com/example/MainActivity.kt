@@ -66,6 +66,7 @@ class MainActivity : ComponentActivity() {
                     ) {
                         when (currentTab) {
                             SoraTab.HOME -> HomeScreen(viewModel = viewModel)
+                            SoraTab.MANHWA_STUDIO -> com.example.manhwa.ui.ManhwaStudioScreen(viewModel = viewModel)
                             SoraTab.GENERATE -> GenerateScreen(viewModel = viewModel)
                             SoraTab.QUEUE -> TaskQueueScreen(viewModel = viewModel)
                             SoraTab.WAKE_WORD -> WakeWordScreen(viewModel = viewModel)
@@ -144,6 +145,7 @@ fun SoraNavigationBar(
 fun getTabIcon(tab: SoraTab): ImageVector {
     return when (tab) {
         SoraTab.HOME -> Icons.Default.Home
+        SoraTab.MANHWA_STUDIO -> Icons.Default.AutoAwesome
         SoraTab.GENERATE -> Icons.Default.VideoCall
         SoraTab.QUEUE -> Icons.Default.Queue
         SoraTab.WAKE_WORD -> Icons.Default.GraphicEq
