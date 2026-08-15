@@ -8,6 +8,7 @@ import com.example.ai.hardware.DeviceHardwareProfile
 import com.example.ai.hardware.HardwareDetector
 import com.example.ai.inference.InferenceEngineManager
 import com.example.ai.inference.InferenceProgress
+import com.example.ai.quantization.ModelQuantizationEngine
 import com.example.ai.queue.TaskQueueManager
 import com.example.ai.server.LocalApiServer
 import com.example.cloud.SoraCloudClient
@@ -30,16 +31,23 @@ class SoraRepository(
     val projectDao = db.projectDao()
     val soraCloudDao = db.soraCloudDao()
     val galleryDao = db.galleryDao()
+    val quantizationHistoryDao = db.quantizationHistoryDao()
 
     val hardwareDetector = HardwareDetector(context)
+    val deviceStorageManager = com.example.ai.hardware.DeviceStorageManager(context)
+    val telemetryPerformanceMonitor = com.example.ai.hardware.TelemetryPerformanceMonitor(context)
+    val logExportManager = com.example.ai.logging.LogExportManager(context)
+
     val inferenceEngineManager = InferenceEngineManager(context)
     val localApiServer = LocalApiServer(context, inferenceEngineManager)
     val huggingFaceClient = HuggingFaceClient()
     val modelDownloadManager = ModelDownloadManager(context, aiModelDao)
+    val modelQuantizationEngine = ModelQuantizationEngine(context, aiModelDao, quantizationHistoryDao)
     val offlineAssistantEngine = OfflineAssistantEngine(context, aiModelDao)
     val videoEditorEngine = VideoEditorEngine()
     val soraCloudClient = SoraCloudClient(soraCloudDao)
     val taskQueueManager = TaskQueueManager(generationJobDao, galleryDao, inferenceEngineManager, repoScope, onJobFinished)
+
 
     fun getDeviceHardwareProfile(): DeviceHardwareProfile {
         return hardwareDetector.getDeviceProfile()

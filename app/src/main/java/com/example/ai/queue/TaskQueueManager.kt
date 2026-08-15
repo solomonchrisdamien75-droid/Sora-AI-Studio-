@@ -341,4 +341,16 @@ class TaskQueueManager(
             }
         }
     }
+
+    fun moveJobToTop(jobId: String) {
+        scope.launch(Dispatchers.IO) {
+            val allQueued = generationJobDao.getQueuedJobs().first()
+            val currentJob = allQueued.firstOrNull { it.id == jobId } ?: return@launch
+            val earliestTimestamp = allQueued.minOfOrNull { it.createdAt } ?: System.currentTimeMillis()
+            val updated = currentJob.copy(createdAt = earliestTimestamp - 1000)
+            generationJobDao.updateJob(updated)
+            _statusMessage.value = "\"${currentJob.title}\" moved to top priority"
+        }
+    }
 }
+

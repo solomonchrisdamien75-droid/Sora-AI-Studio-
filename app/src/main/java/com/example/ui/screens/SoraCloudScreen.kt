@@ -467,15 +467,19 @@ fun SoraCloudScreen(viewModel: SoraMainViewModel) {
                     Divider(color = GlassSurfaceVariant)
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Require API Key Switch
+                    // Require API Key Switch & OpenAI Key Card
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(text = "Require Bearer Token (API Key)", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                            Text(text = "Protect endpoints with HTTP 401 Unauthorized check", fontSize = 11.sp, color = TextSecondary)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(text = "OpenAI-Compatible API Key Auth", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                SoraBadge(text = "OPENAI COMPATIBLE", color = AccentGreen)
+                            }
+                            Text(text = "Auto-generated for loaded model. Authenticates standard 'Bearer sk-proj-...' headers", fontSize = 11.sp, color = TextSecondary)
                         }
 
                         Switch(
@@ -492,16 +496,25 @@ fun SoraCloudScreen(viewModel: SoraMainViewModel) {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .background(GlassSurfaceVariant, RoundedCornerShape(8.dp))
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                                .border(1.dp, NeonCyan.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = serverState.config.apiKey,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 12.sp,
-                                color = NeonCyan
-                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Active Model API Key:",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextSecondary
+                                )
+                                Text(
+                                    text = serverState.config.apiKey,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.sp,
+                                    color = NeonCyan
+                                )
+                            }
                             Row {
                                 IconButton(
                                     onClick = { viewModel.regenerateApiKey() },
@@ -512,7 +525,7 @@ fun SoraCloudScreen(viewModel: SoraMainViewModel) {
                                 IconButton(
                                     onClick = {
                                         clipboardManager.setText(AnnotatedString(serverState.config.apiKey))
-                                        Toast.makeText(context, "API Key copied!", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "OpenAI API Key copied!", Toast.LENGTH_SHORT).show()
                                     },
                                     modifier = Modifier.size(28.dp)
                                 ) {
@@ -696,6 +709,69 @@ fun SoraCloudScreen(viewModel: SoraMainViewModel) {
                 }
             }
 
+            // Python OpenAI SDK Code Snippet Generator
+            item {
+                val pythonSnippet = """
+from openai import OpenAI
+
+# Initialize client pointing to local offline model server on Android
+client = OpenAI(
+    base_url="${serverState.networkUrl}",
+    api_key="${serverState.config.apiKey}"
+)
+
+response = client.chat.completions.create(
+    model="${activeModel?.name ?: "local-model"}",
+    messages=[
+        {"role": "system", "content": "You are an AI assistant running offline on Android."},
+        {"role": "user", "content": "Explain quantum computing in one sentence."}
+    ],
+    temperature=0.7
+)
+
+print(response.choices[0].message.content)
+                """.trimIndent()
+
+                SoraGlassCard {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(text = "Python (Official openai Library)", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            SoraBadge(text = "OPENAI SDK", color = NeonCyan)
+                        }
+                        IconButton(
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(pythonSnippet))
+                                Toast.makeText(context, "Copied Python OpenAI snippet!", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.ContentCopy, contentDescription = "Copy", tint = NeonCyan, modifier = Modifier.size(16.dp))
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(DeepDarkBg, RoundedCornerShape(8.dp))
+                            .padding(10.dp)
+                    ) {
+                        Text(
+                            text = pythonSnippet,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            color = AccentGreen
+                        )
+                    }
+                }
+            }
+
             // cURL Code Snippet Generator
             item {
                 val curlCommand = "curl ${serverState.networkUrl}/chat/completions \\\n" +
@@ -713,7 +789,11 @@ fun SoraCloudScreen(viewModel: SoraMainViewModel) {
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(text = "cURL Terminal Command", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(text = "cURL Terminal Command", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            SoraBadge(text = "BASH / CURL", color = TextSecondary)
+                        }
                         IconButton(
                             onClick = {
                                 clipboardManager.setText(AnnotatedString(curlCommand))

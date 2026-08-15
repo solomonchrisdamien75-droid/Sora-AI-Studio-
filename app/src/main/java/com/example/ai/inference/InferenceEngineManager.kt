@@ -18,8 +18,13 @@ class InferenceEngineManager(private val context: Context) {
 
     private val inferenceMutex = Mutex()
 
+    // Primary active model for inference engine dispatching
     private val _activeLoadedModel = MutableStateFlow<AiModelEntity?>(null)
     val activeLoadedModel: StateFlow<AiModelEntity?> = _activeLoadedModel.asStateFlow()
+
+    // Multi-Model Pool: Support loading 2 to an infinite number of models simultaneously in memory
+    private val _loadedModelsPool = MutableStateFlow<List<AiModelEntity>>(emptyList())
+    val loadedModelsPool: StateFlow<List<AiModelEntity>> = _loadedModelsPool.asStateFlow()
 
     private val _activeEngine = MutableStateFlow<ModelInferenceEngine?>(null)
     val activeEngine: StateFlow<ModelInferenceEngine?> = _activeEngine.asStateFlow()
@@ -61,14 +66,18 @@ class InferenceEngineManager(private val context: Context) {
         )
     }
 
-    suspend fun loadModel(model: AiModelEntity): Pair<Boolean, String> = inferenceMutex.withLock {
-        // Safe Model Switching: Unload any currently active model first
-        unloadCurrentModelInternal()
+    /**
+     * Load a model into memory.
+     * @param model The AI model entity to load.
+     * @param keepExisting When true, keeps previously loaded models in RAM (enabling 2 to infinite concurrent models).
+     */
+    suspend fun loadModel(model: AiModelEntity, keepExisting: Boolean = true): Pair<Boolean, String> = inferenceMutex.withLock {
+        if (!keepExisting) {
+            unloadCurrentModelInternal()
+        }
 
         val check = hardwareDetector.canRunModel(model.ramRequiredMb)
-        if (!check.first) {
-            return check
-        }
+        val ramWarning = if (check.second.contains("Warning", ignoreCase = true)) " [RAM limits bypassed]" else ""
 
         val engine = selectEngineForModel(model)
         val loaded = engine.loadModel(model)
@@ -76,16 +85,45 @@ class InferenceEngineManager(private val context: Context) {
         return if (loaded) {
             _activeLoadedModel.value = model
             _activeEngine.value = engine
-            Pair(true, "Model '${model.name}' successfully loaded into ${engine.engineName}")
+
+            // Update Multi-Model Pool
+            val pool = _loadedModelsPool.value.toMutableList()
+            if (!pool.any { it.id == model.id }) {
+                pool.add(model)
+            }
+            _loadedModelsPool.value = pool
+
+            Pair(
+                true,
+                "Model '${model.name}' loaded (${pool.size} active model(s) in RAM: ${getTotalLoadedRamMb()}MB combined)$ramWarning"
+            )
         } else {
-            _activeLoadedModel.value = null
-            _activeEngine.value = null
             Pair(false, "Failed to initialize ${engine.engineName} for model '${model.name}'")
         }
     }
 
+    suspend fun unloadSpecificModel(modelId: String): Boolean = inferenceMutex.withLock {
+        val pool = _loadedModelsPool.value.toMutableList()
+        val removed = pool.removeAll { it.id == modelId }
+        _loadedModelsPool.value = pool
+
+        if (_activeLoadedModel.value?.id == modelId) {
+            _activeLoadedModel.value = pool.lastOrNull()
+            _activeEngine.value = _activeLoadedModel.value?.let { selectEngineForModel(it) }
+        }
+        return removed
+    }
+
+    fun getTotalLoadedRamMb(): Int {
+        return _loadedModelsPool.value.sumOf { it.ramRequiredMb }
+    }
+
+    fun isModelLoaded(modelId: String): Boolean {
+        return _loadedModelsPool.value.any { it.id == modelId }
+    }
+
     suspend fun validateAndPrepareInference(model: AiModelEntity): Pair<Boolean, String> {
-        return loadModel(model)
+        return loadModel(model, keepExisting = true)
     }
 
     suspend fun unloadCurrentModel() = inferenceMutex.withLock {
@@ -99,6 +137,7 @@ class InferenceEngineManager(private val context: Context) {
         onnxEngine.unloadModel()
         _activeLoadedModel.value = null
         _activeEngine.value = null
+        _loadedModelsPool.value = emptyList()
     }
 
     suspend fun trimMemory() = inferenceMutex.withLock {
@@ -113,3 +152,4 @@ class InferenceEngineManager(private val context: Context) {
         }
     }
 }
+

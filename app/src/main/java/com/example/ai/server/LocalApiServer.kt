@@ -39,12 +39,33 @@ class LocalApiServer(
         serverScope.launch {
             engineManager.activeLoadedModel.collect { model ->
                 val backendInfo = engineManager.getBackendInfoForModel(model)
+                val modelApiKey = if (model != null) {
+                    generateOpenAiApiKey(model.name)
+                } else {
+                    _serverState.value.generatedModelApiKey
+                }
+                val updatedConfig = _serverState.value.config.copy(
+                    apiKey = modelApiKey,
+                    apiKeyEnabled = true // Enable API key auth automatically for loaded offline model
+                )
                 _serverState.value = _serverState.value.copy(
                     activeModel = model,
+                    generatedModelApiKey = modelApiKey,
+                    config = updatedConfig,
                     backendInfo = backendInfo
                 )
             }
         }
+    }
+
+    fun generateAndSetModelApiKey(modelName: String): String {
+        val newKey = generateOpenAiApiKey(modelName)
+        val updatedConfig = _serverState.value.config.copy(apiKey = newKey, apiKeyEnabled = true)
+        _serverState.value = _serverState.value.copy(
+            generatedModelApiKey = newKey,
+            config = updatedConfig
+        )
+        return newKey
     }
 
     fun updateConfig(config: ServerConfig) {

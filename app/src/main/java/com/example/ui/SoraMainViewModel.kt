@@ -7,6 +7,14 @@ import com.example.ai.assistant.ScriptProductionPackage
 import com.example.ai.downloader.DownloadProgressState
 import com.example.ai.downloader.HuggingFaceModelInfo
 import com.example.ai.hardware.DeviceHardwareProfile
+import com.example.ai.hardware.RealtimeTelemetryState
+import com.example.ai.hardware.StorageVolumeInfo
+import com.example.ai.quantization.ModelQuantizationEngine
+import com.example.ai.quantization.QuantizationConfig
+import com.example.ai.quantization.QuantizationPrecision
+import com.example.ai.quantization.QuantizationProgressState
+import com.example.ai.quantization.QuantizationTradeoffObjective
+
 import com.example.cloud.CloudJobResponse
 import com.example.ai.wakeword.SoraWakeWordEngine
 import com.example.ai.wakeword.VoiceEventItem
@@ -142,6 +150,9 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
     private val _downloadingState = MutableStateFlow<DownloadProgressState?>(null)
     val downloadingState: StateFlow<DownloadProgressState?> = _downloadingState.asStateFlow()
 
+    private val _quantizationState = MutableStateFlow<QuantizationProgressState?>(null)
+    val quantizationState: StateFlow<QuantizationProgressState?> = _quantizationState.asStateFlow()
+
     private val _assistantInput = MutableStateFlow("Sci-Fi action scene with spaceship chase through neon asteroids")
     val assistantInput: StateFlow<String> = _assistantInput.asStateFlow()
 
@@ -154,6 +165,13 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
     // Video Editor state
     private val _editorProject = MutableStateFlow(createInitialEditorProject())
     val editorProject: StateFlow<VideoEditorProject> = _editorProject.asStateFlow()
+
+    private val _activeEditorClipId = MutableStateFlow<String?>(null)
+    val activeEditorClipId: StateFlow<String?> = _activeEditorClipId.asStateFlow()
+
+    fun setActiveEditorClip(clipId: String?) {
+        _activeEditorClipId.value = clipId
+    }
 
     // Virtual RAM & Workspace mode
     private val _memoryMode = MutableStateFlow("Balanced Mode") // Low RAM, Balanced, Maximum Performance
@@ -383,8 +401,14 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
     val serverState: StateFlow<com.example.ai.server.ServerState> = repository.localApiServer.serverState
 
     val activeLoadedModel: StateFlow<AiModelEntity?> = repository.inferenceEngineManager.activeLoadedModel
-
+    val loadedModelsPool: StateFlow<List<AiModelEntity>> = repository.inferenceEngineManager.loadedModelsPool
     val activeEngine: StateFlow<com.example.ai.inference.ModelInferenceEngine?> = repository.inferenceEngineManager.activeEngine
+
+    val quantizationHistory: StateFlow<List<QuantizationHistoryEntity>> = repository.quantizationHistoryDao.getAllHistory()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val realtimeTelemetry: StateFlow<RealtimeTelemetryState> = repository.telemetryPerformanceMonitor.telemetryState
+    val storageVolumes: List<StorageVolumeInfo> get() = repository.deviceStorageManager.getAllStorageVolumes()
 
     private val _serverOperationMessage = MutableStateFlow<String?>(null)
     val serverOperationMessage: StateFlow<String?> = _serverOperationMessage.asStateFlow()
@@ -393,19 +417,34 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
         _serverOperationMessage.value = null
     }
 
-    fun loadModelForServer(model: AiModelEntity) {
+    fun loadModelForServer(model: AiModelEntity, keepOthers: Boolean = true) {
         viewModelScope.launch {
             val wasServerRunning = serverState.value.status == com.example.ai.server.ServerStatus.RUNNING
-            if (wasServerRunning) {
+            if (wasServerRunning && !keepOthers) {
                 repository.localApiServer.stopServer()
             }
 
-            val result = repository.inferenceEngineManager.loadModel(model)
-            _serverOperationMessage.value = result.second
+            val result = repository.inferenceEngineManager.loadModel(model, keepExisting = keepOthers)
+            val generatedKey = repository.localApiServer.generateAndSetModelApiKey(model.name)
+            _serverApiKey.value = generatedKey
 
-            if (wasServerRunning && result.first) {
-                // Auto-restart server with new model
-                repository.localApiServer.startServer()
+            if (result.first) {
+                val poolCount = repository.inferenceEngineManager.loadedModelsPool.value.size
+                _serverOperationMessage.value = "Model '${model.name}' loaded ($poolCount active in memory pool)! OpenAI API-Key: $generatedKey"
+                if (wasServerRunning || _isApiServerToggle.value) {
+                    repository.localApiServer.startServer()
+                }
+            } else {
+                _serverOperationMessage.value = result.second
+            }
+        }
+    }
+
+    fun unloadSpecificModel(modelId: String) {
+        viewModelScope.launch {
+            val wasUnloaded = repository.inferenceEngineManager.unloadSpecificModel(modelId)
+            if (wasUnloaded) {
+                _serverOperationMessage.value = "Model unloaded from memory pool"
             }
         }
     }
@@ -416,21 +455,32 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
                 repository.localApiServer.stopServer()
             }
             repository.inferenceEngineManager.unloadCurrentModel()
-            _serverOperationMessage.value = "Active model unloaded from memory"
+            _serverOperationMessage.value = "All active models unloaded from memory"
         }
     }
+
 
     fun toggleApiServer() {
         if (serverState.value.status == com.example.ai.server.ServerStatus.RUNNING) {
             repository.localApiServer.stopServer()
             _serverOperationMessage.value = "Local API Server stopped"
         } else {
+            val currentModel = activeLoadedModel.value
+            if (currentModel != null) {
+                val key = repository.localApiServer.generateAndSetModelApiKey(currentModel.name)
+                _serverApiKey.value = key
+            }
             val result = repository.localApiServer.startServer()
             _serverOperationMessage.value = result.second
         }
     }
 
     fun startApiServer(): Pair<Boolean, String> {
+        val currentModel = activeLoadedModel.value
+        if (currentModel != null) {
+            val key = repository.localApiServer.generateAndSetModelApiKey(currentModel.name)
+            _serverApiKey.value = key
+        }
         val result = repository.localApiServer.startServer()
         _serverOperationMessage.value = result.second
         return result
@@ -462,11 +512,14 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
     fun updateApiKey(key: String) {
         val currentConfig = serverState.value.config
         repository.localApiServer.updateConfig(currentConfig.copy(apiKey = key))
+        _serverApiKey.value = key
     }
 
     fun regenerateApiKey() {
-        val newKey = "sk-sora-local-" + java.util.UUID.randomUUID().toString().replace("-", "").take(12)
-        updateApiKey(newKey)
+        val modelName = activeLoadedModel.value?.name ?: "local"
+        val newKey = repository.localApiServer.generateAndSetModelApiKey(modelName)
+        _serverApiKey.value = newKey
+        _serverOperationMessage.value = "Generated new OpenAI API Key: $newKey"
     }
 
     fun updateTunnelEnabled(enabled: Boolean) {
@@ -898,6 +951,24 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
             return
         }
 
+        // If a generation is already actively running, seamlessly enqueue the request without blocking or disabling the button!
+        if (form.isGenerating) {
+            viewModelScope.launch {
+                val queuedJob = repository.taskQueueManager.enqueueSingleJob(
+                    title = form.title,
+                    prompt = form.prompt,
+                    generationType = form.generationType,
+                    mode = form.mode,
+                    durationSec = form.durationSec,
+                    resolution = form.resolution,
+                    fps = form.fps
+                )
+                val etaSec = form.durationSec * 2
+                _settingsStatusMessage.value = "Generation in progress: \"${queuedJob.title}\" enqueued in background (Estimated time: ${etaSec}s). You can safely navigate or leave the app!"
+            }
+            return
+        }
+
         _generationForm.value = form.copy(isGenerating = true, errorMessage = null)
 
         viewModelScope.launch(Dispatchers.IO) {
@@ -939,6 +1010,7 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
             }
         }
     }
+
 
     fun addCurrentFormToQueue() {
         val form = _generationForm.value
@@ -1010,6 +1082,27 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
     fun moveQueuedJob(jobId: String, moveUp: Boolean) {
         repository.taskQueueManager.moveJob(jobId, moveUp)
     }
+
+    fun moveQueuedJobToTop(jobId: String) {
+        repository.taskQueueManager.moveJobToTop(jobId)
+    }
+
+    fun deleteQuantizationHistoryEntry(historyId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.quantizationHistoryDao.deleteHistoryById(historyId)
+        }
+    }
+
+    fun clearAllQuantizationHistory() {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.quantizationHistoryDao.clearAllHistory()
+        }
+    }
+
+    fun exportExecutionLogs(context: android.content.Context) {
+        repository.logExportManager.exportAndShareLogs(context)
+    }
+
 
     fun cancelActiveJob(jobId: String) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -1101,6 +1194,48 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun startModelQuantization(
+        model: AiModelEntity,
+        precision: QuantizationPrecision,
+        tradeoffObjective: QuantizationTradeoffObjective = QuantizationTradeoffObjective.BALANCED_MULTI_OBJECTIVE,
+        iterationsCount: Int = 10,
+        storageType: String = "INTERNAL",
+        customPath: String? = null,
+        chunkSizeMb: Int = 64,
+        cpuThreads: Int = 4,
+        preserveOutliers: Boolean = true
+    ) {
+        viewModelScope.launch {
+            val config = QuantizationConfig(
+                sourceModel = model,
+                targetPrecision = precision,
+                tradeoffObjective = tradeoffObjective,
+                iterationsCount = iterationsCount,
+                storageType = storageType,
+                customStoragePath = customPath,
+                streamChunkSizeMb = chunkSizeMb,
+                cpuThreadCount = cpuThreads,
+                preserveOutliers = preserveOutliers
+            )
+            repository.modelQuantizationEngine.startQuantization(config).collect { state ->
+                _quantizationState.value = state
+                if (state.isFinished) {
+                    _settingsStatusMessage.value = "Quantized ${model.name} to ${precision.id} (${state.estimatedQuantizedRamMb}MB RAM, -${state.ramSavedPercent}%)"
+                }
+            }
+        }
+    }
+
+
+    fun cancelModelQuantization() {
+        repository.modelQuantizationEngine.cancelQuantization()
+        _quantizationState.value = null
+    }
+
+    fun clearQuantizationState() {
+        _quantizationState.value = null
+    }
+
     fun updateAssistantInput(input: String) {
         _assistantInput.value = input
     }
@@ -1114,9 +1249,8 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun addClipToEditor(filePath: String, title: String) {
+    fun addClipToEditor(filePath: String, title: String, durationMs: Long = 5000L): String {
         val current = _editorProject.value
-        val durationMs = 5000L
         val clipId = "clip_${System.currentTimeMillis()}"
         val engine = VideoEditorEngine()
         val newClip = MediaClipTrack(
@@ -1130,6 +1264,8 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
         )
         val updatedList = current.videoClips.toMutableList().apply { add(newClip) }
         _editorProject.value = current.copy(videoClips = updatedList)
+        _activeEditorClipId.value = clipId
+        return clipId
     }
 
     fun moveClipLeft(clipId: String) {
@@ -1764,13 +1900,15 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun generateNewServerApiKey() {
-        val chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-        val randomPart = (1..32).map { chars.random() }.joinToString("")
-        _serverApiKey.value = "sk-live-$randomPart"
+        val modelName = activeLoadedModel.value?.name ?: "local"
+        val newKey = repository.localApiServer.generateAndSetModelApiKey(modelName)
+        _serverApiKey.value = newKey
+        setSettingsStatus("Generated OpenAI-compatible API Key: $newKey")
     }
 
     fun setServerApiKey(key: String) {
         _serverApiKey.value = key
+        updateApiKey(key)
     }
 
     fun togglePublicTunnel(enabled: Boolean) {

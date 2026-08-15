@@ -21,13 +21,23 @@ data class ServerModelBackendInfo(
 
 data class ServerConfig(
     val port: Int = 8080,
-    val apiKeyEnabled: Boolean = false,
-    val apiKey: String = "sk-sora-local-" + java.util.UUID.randomUUID().toString().take(8),
+    val apiKeyEnabled: Boolean = true,
+    val apiKey: String = generateOpenAiApiKey("default"),
     val tunnelEnabled: Boolean = false,
     val tunnelSubdomain: String = "sora-local-ai",
     val maxConcurrentRequests: Int = 4,
     val timeoutSeconds: Int = 60
 )
+
+fun generateOpenAiApiKey(modelName: String): String {
+    val cleanName = modelName.lowercase()
+        .replace(Regex("[^a-z0-9]"), "-")
+        .trim('-')
+        .take(16)
+        .ifBlank { "local" }
+    val randomPart = java.util.UUID.randomUUID().toString().replace("-", "").take(24)
+    return "sk-proj-$cleanName-$randomPart"
+}
 
 data class ServerState(
     val status: ServerStatus = ServerStatus.STOPPED,
@@ -37,6 +47,7 @@ data class ServerState(
     val tunnelUrl: String? = null,
     val config: ServerConfig = ServerConfig(),
     val activeModel: AiModelEntity? = null,
+    val generatedModelApiKey: String = generateOpenAiApiKey("default"),
     val backendInfo: ServerModelBackendInfo? = null,
     val requestCount: Long = 0L,
     val tokensGenerated: Long = 0L,

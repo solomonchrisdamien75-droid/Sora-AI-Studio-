@@ -1,8 +1,10 @@
 package com.example.ui.screens
 
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,11 +22,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ai.quantization.QuantizationConfig
+import com.example.ai.quantization.QuantizationPrecision
+import com.example.ai.quantization.QuantizationProgressState
+import com.example.ai.quantization.QuantizationTradeoffObjective
 import com.example.data.AiModelEntity
+import com.example.data.QuantizationHistoryEntity
 import com.example.ui.SoraMainViewModel
 import com.example.ui.SoraTab
 import com.example.ui.components.*
@@ -32,13 +43,21 @@ import com.example.ui.theme.*
 
 @Composable
 fun ModelsScreen(viewModel: SoraMainViewModel) {
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
     val models by viewModel.allModels.collectAsState()
     val activeLoadedModel by viewModel.activeLoadedModel.collectAsState()
+    val loadedModelsPool by viewModel.loadedModelsPool.collectAsState()
+    val quantizationHistory by viewModel.quantizationHistory.collectAsState()
+    val realtimeTelemetry by viewModel.realtimeTelemetry.collectAsState()
+    val serverState by viewModel.serverState.collectAsState()
     val hardware by viewModel.hardwareProfile.collectAsState()
     val dlState by viewModel.downloadingState.collectAsState()
+    val quantState by viewModel.quantizationState.collectAsState()
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf("ALL") }
+    var selectedSectionTab by remember { mutableStateOf("MODELS") } // "MODELS", "HISTORY", "MEMORY_POOL"
 
     // Dialog state for manual model import (+)
     var showImportDialog by remember { mutableStateOf(false) }
@@ -51,8 +70,12 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
 
     // Dialog state for choosing download storage location
     var modelToDownload by remember { mutableStateOf<AiModelEntity?>(null) }
-    var selectedDownloadStorage by remember { mutableStateOf("INTERNAL") } // "INTERNAL" or "SD_CARD" or "CUSTOM"
+    var selectedDownloadStorage by remember { mutableStateOf("INTERNAL") }
     var customDownloadPath by remember { mutableStateOf("/sdcard/ai_models") }
+
+    // Dialog state for Model Quantization Utility
+    var modelToQuantize by remember { mutableStateOf<AiModelEntity?>(null) }
+    var showQuantLogTerminal by remember { mutableStateOf(true) }
 
     // File picker launcher for opening model files from storage or SD card
     val modelFilePicker = rememberLauncherForActivityResult(
@@ -89,112 +112,516 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
         }
     }
 
+    val availRamMb = ((hardware?.availableRamGb ?: 4.0f) * 1024).toInt()
+    val downloadedModels = models.filter { it.isDownloaded }
+    val heavyModelsExceedingRam = downloadedModels.filter { it.ramRequiredMb > availRamMb && !it.name.contains("Q4") && !it.name.contains("Q3") && !it.name.contains("Q2") }
+
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             item {
                 SoraSectionHeader(
-                    title = "Model Manager & Storage Space",
-                    subtitle = "Manage models on Phone Storage & SD Card • GGUF, LiteRT, ONNX & Safetensors",
+                    title = "Model Manager & Multi-Model Engine",
+                    subtitle = "Load concurrent models • Recursive Quantization (5-5000x) • Live RAM/CPU telemetry",
                     icon = Icons.Default.FolderZip,
                     actionText = "+ Import Model",
                     onActionClick = { showImportDialog = true }
                 )
             }
 
-            // Active Download Progress Monitor (if downloading)
-            val state = dlState
-            if (state != null) {
-                item {
-                    SoraGlassCard(borderColor = NeonCyan) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(text = "Downloading Model to ", fontSize = 12.sp, color = NeonCyan)
-                                    SoraBadge(text = state.storageLocationLabel, color = if (state.storageLocationLabel.contains("SD")) AccentGreen else NeonPurple)
-                                }
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(text = state.modelName, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                            }
-                            SoraBadge(text = "${state.progressPercent}%", color = NeonCyan)
-                        }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        LinearProgressIndicator(
-                            progress = { state.progressPercent / 100f },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(8.dp)
-                                .clip(RoundedCornerShape(4.dp)),
-                            color = NeonCyan,
-                            trackColor = GlassSurfaceVariant
-                        )
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = "${state.bytesDownloaded / (1024 * 1024)}MB / ${state.totalBytes / (1024 * 1024)}MB",
-                                fontSize = 12.sp,
-                                color = TextSecondary
-                            )
-                            Text(
-                                text = "Speed: ${String.format("%.1f", state.downloadSpeedKbps / 1024f)} MB/s",
-                                fontSize = 12.sp,
-                                color = NeonPurple
-                            )
-                            Text(
-                                text = "ETA: ${state.etaSeconds}s",
-                                fontSize = 12.sp,
-                                color = TextSecondary
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Storage Destinations Info Card (Phone Storage vs SD Card)
+            // Real-time Hardware Telemetry Bar
             item {
-                SoraGlassCard {
+                SoraGlassCard(borderColor = NeonCyan.copy(alpha = 0.6f)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
-                            Text(text = "💾 Storage Drives & Model Targets", fontSize = 13.sp, color = NeonCyan, fontWeight = FontWeight.Bold)
-                            Text(text = "📱 Phone Storage (~58 GB Free) • 💾 SD Card (~124 GB Free)", fontSize = 11.sp, color = TextSecondary)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(if (realtimeTelemetry.isThermalThrottled) AccentRed else AccentGreen)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "LIVE SYSTEM TELEMETRY",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = NeonCyan
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "CPU: ${realtimeTelemetry.cpuUsagePercent}% (${realtimeTelemetry.activeCores} cores) • RAM: ${realtimeTelemetry.usedRamMb}MB / ${realtimeTelemetry.totalRamMb}MB (${realtimeTelemetry.freeRamMb}MB Free)",
+                                fontSize = 11.sp,
+                                color = TextPrimary
+                            )
                         }
-                        Button(
-                            onClick = { showImportDialog = true },
-                            colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.testTag("import_model_top_btn")
-                        ) {
-                            Icon(imageVector = Icons.Default.Add, contentDescription = null, tint = DeepDarkBg, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Upload Model", color = DeepDarkBg, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            SoraBadge(
+                                text = "${realtimeTelemetry.inferenceFpsBenchmark} FPS",
+                                color = AccentGreen
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            IconButton(
+                                onClick = { viewModel.exportExecutionLogs(context) },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.Share, contentDescription = "Export Logs", tint = NeonCyan, modifier = Modifier.size(16.dp))
+                            }
                         }
                     }
                 }
             }
 
-            // Active Model in Memory Status Banner
-            if (activeLoadedModel != null) {
+            // Main Screen Section Selector Tabs (Models / History / Memory Pool)
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    TabPill(
+                        label = "All Models (${models.size})",
+                        icon = Icons.Default.Widgets,
+                        isSelected = selectedSectionTab == "MODELS",
+                        onClick = { selectedSectionTab = "MODELS" },
+                        modifier = Modifier.weight(1f)
+                    )
+                    TabPill(
+                        label = "Memory Pool (${loadedModelsPool.size})",
+                        icon = Icons.Default.Layers,
+                        isSelected = selectedSectionTab == "MEMORY_POOL",
+                        onClick = { selectedSectionTab = "MEMORY_POOL" },
+                        modifier = Modifier.weight(1f)
+                    )
+                    TabPill(
+                        label = "History (${quantizationHistory.size})",
+                        icon = Icons.Default.History,
+                        isSelected = selectedSectionTab == "HISTORY",
+                        onClick = { selectedSectionTab = "HISTORY" },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            // =========================================================================
+            // SECTION: QUANTIZATION HISTORY VIEW
+            // =========================================================================
+            if (selectedSectionTab == "HISTORY") {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Quantization Audit Log & Tradeoff History",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = NeonCyan
+                        )
+                        if (quantizationHistory.isNotEmpty()) {
+                            TextButton(onClick = { viewModel.clearAllQuantizationHistory() }) {
+                                Text("Clear History", fontSize = 11.sp, color = AccentRed)
+                            }
+                        }
+                    }
+                }
+
+                if (quantizationHistory.isEmpty()) {
+                    item {
+                        SoraGlassCard {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(imageVector = Icons.Default.HistoryEdu, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(36.dp))
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(text = "No Quantization Jobs Executed Yet", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                Text(text = "Quantize any downloaded model to view before vs after metrics here", fontSize = 11.sp, color = TextSecondary)
+                            }
+                        }
+                    }
+                } else {
+                    items(quantizationHistory) { item ->
+                        SoraGlassCard(borderColor = NeonCyan.copy(alpha = 0.4f)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        SoraBadge(text = item.precisionFormat, color = NeonCyan)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        SoraBadge(text = "${item.iterationsCount} PASSES", color = NeonPurple)
+                                        if (item.isRequantized) {
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            SoraBadge(text = "🔁 RE-QUANTIZED", color = ElectricPink)
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(text = item.quantizedModelName, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                    Text(text = "Source: ${item.sourceModelName}", fontSize = 11.sp, color = TextSecondary)
+                                }
+
+                                IconButton(onClick = { viewModel.deleteQuantizationHistoryEntry(item.id) }) {
+                                    Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete", tint = TextSecondary, modifier = Modifier.size(18.dp))
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Divider(color = GlassSurfaceVariant)
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column {
+                                    Text(text = "RAM Reduction", fontSize = 10.sp, color = TextSecondary)
+                                    Text(
+                                        text = "${item.originalRamMb}MB ➔ ${item.quantizedRamMb}MB (-${item.ramSavedPercent}%)",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = AccentGreen
+                                    )
+                                }
+                                Column {
+                                    Text(text = "Disk Size", fontSize = 10.sp, color = TextSecondary)
+                                    Text(
+                                        text = "${item.originalSizeBytes / (1024 * 1024)}MB ➔ ${item.quantizedSizeBytes / (1024 * 1024)}MB",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = NeonCyan
+                                    )
+                                }
+                                Column {
+                                    Text(text = "Inference Speed", fontSize = 10.sp, color = TextSecondary)
+                                    Text(
+                                        text = "${item.benchmarkSpeedBefore.take(7)} ➔ ${item.benchmarkSpeedAfter.take(7)}",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = ElectricPink
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // =========================================================================
+            // SECTION: MULTI-MODEL MEMORY POOL VIEW (LOAD 2 TO INFINITE MODELS)
+            // =========================================================================
+            if (selectedSectionTab == "MEMORY_POOL") {
                 item {
                     SoraGlassCard(borderColor = AccentGreen) {
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text(text = "⚡ Concurrent Multi-Model Memory Pool", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = AccentGreen)
+                                    Text(text = "Load 2 to multiple AI models concurrently in RAM without unloading", fontSize = 11.sp, color = TextSecondary)
+                                }
+                                if (loadedModelsPool.isNotEmpty()) {
+                                    OutlinedButton(
+                                        onClick = { viewModel.unloadActiveModel() },
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = AccentRed)
+                                    ) {
+                                        Text("Unload All", fontSize = 11.sp)
+                                    }
+                                }
+                            }
+
+                            val totalPoolRamMb = loadedModelsPool.sumOf { it.ramRequiredMb }
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(GlassSurfaceVariant, RoundedCornerShape(8.dp))
+                                    .padding(8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(text = "Active Models in RAM: ${loadedModelsPool.size}", fontSize = 12.sp, color = TextPrimary, fontWeight = FontWeight.Bold)
+                                Text(text = "Combined RAM Footprint: ${totalPoolRamMb}MB", fontSize = 12.sp, color = AccentGreen, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
+                if (loadedModelsPool.isEmpty()) {
+                    item {
+                        SoraGlassCard {
+                            Text(
+                                text = "No models currently loaded in memory. Tap 'Load' or '⚡ Force' on any model in the list to load it into the concurrent pool.",
+                                fontSize = 12.sp,
+                                color = TextSecondary
+                            )
+                        }
+                    }
+                } else {
+                    items(loadedModelsPool) { model ->
+                        SoraGlassCard(borderColor = AccentGreen.copy(alpha = 0.6f)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        SoraBadge(text = model.format, color = NeonCyan)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        SoraBadge(text = "${model.ramRequiredMb}MB RAM", color = AccentGreen)
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(text = model.name, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                    Text(text = model.description, fontSize = 11.sp, color = TextSecondary)
+                                }
+
+                                Button(
+                                    onClick = { viewModel.unloadSpecificModel(model.id) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = AccentRed.copy(alpha = 0.8f)),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("Unload", fontSize = 11.sp, color = Color.White)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // =========================================================================
+            // SECTION: ALL MODELS / DEFAULT VIEW
+            // =========================================================================
+            if (selectedSectionTab == "MODELS") {
+                // Active Quantization Card
+                val currentQuant = quantState
+                if (currentQuant != null) {
+                    item {
+                        SoraGlassCard(borderColor = if (currentQuant.isFinished) AccentGreen else NeonCyan) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = if (currentQuant.isFinished) Icons.Default.CheckCircle else Icons.Default.Compress,
+                                            contentDescription = null,
+                                            tint = if (currentQuant.isFinished) AccentGreen else NeonCyan,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = if (currentQuant.isFinished) "Quantization Complete!" else "Quantizing Model...",
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (currentQuant.isFinished) AccentGreen else NeonCyan
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "${currentQuant.originalModelName} ➔ ${currentQuant.targetPrecision.id} (${currentQuant.totalIterations} passes)",
+                                        fontSize = 12.sp,
+                                        color = TextPrimary
+                                    )
+                                }
+                                SoraBadge(text = "${currentQuant.progressPercent}%", color = if (currentQuant.isFinished) AccentGreen else NeonCyan)
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            LinearProgressIndicator(
+                                progress = { currentQuant.progressPercent / 100f },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(6.dp)
+                                    .clip(RoundedCornerShape(3.dp)),
+                                color = if (currentQuant.isFinished) AccentGreen else NeonCyan,
+                                trackColor = GlassSurfaceVariant
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "RAM Footprint: ${currentQuant.originalRamMb}MB ➔ ${currentQuant.estimatedQuantizedRamMb}MB (-${currentQuant.ramSavedPercent}%) • Speed: ${currentQuant.benchmarkSpeedBefore} ➔ ${currentQuant.benchmarkSpeedAfter}",
+                                fontSize = 11.sp,
+                                color = AccentGreen
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                                if (currentQuant.isFinished) {
+                                    Button(
+                                        onClick = {
+                                            currentQuant.resultingModel?.let { viewModel.loadModelForServer(it, keepOthers = true) }
+                                            viewModel.clearQuantizationState()
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = AccentGreen),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text("Load in Memory Pool", color = DeepDarkBg, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    OutlinedButton(onClick = { viewModel.clearQuantizationState() }) {
+                                        Text("Dismiss", fontSize = 11.sp)
+                                    }
+                                } else {
+                                    OutlinedButton(onClick = { viewModel.cancelModelQuantization() }) {
+                                        Text("Cancel", fontSize = 11.sp, color = AccentRed)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Active Download Progress Monitor
+                val state = dlState
+                if (state != null) {
+                    item {
+                        SoraGlassCard(borderColor = NeonCyan) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(text = "Downloading Model to ", fontSize = 12.sp, color = NeonCyan)
+                                        SoraBadge(text = state.storageLocationLabel, color = if (state.storageLocationLabel.contains("SD")) AccentGreen else NeonPurple)
+                                    }
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(text = state.modelName, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                }
+                                SoraBadge(text = "${state.progressPercent}%", color = NeonCyan)
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+                            LinearProgressIndicator(
+                                progress = { state.progressPercent / 100f },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(8.dp)
+                                    .clip(RoundedCornerShape(4.dp)),
+                                color = NeonCyan,
+                                trackColor = GlassSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                // Low-RAM Warning Banner
+                if (heavyModelsExceedingRam.isNotEmpty()) {
+                    item {
+                        SoraGlassCard(borderColor = ElectricPink) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(CircleShape)
+                                        .background(ElectricPink.copy(alpha = 0.2f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(imageVector = Icons.Default.Memory, contentDescription = null, tint = ElectricPink, modifier = Modifier.size(20.dp))
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Low-RAM Device (${availRamMb}MB Free)",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextPrimary
+                                    )
+                                    Text(
+                                        text = "${heavyModelsExceedingRam.size} models exceed RAM. Quantize with 5-5000 iterations to run smoothly.",
+                                        fontSize = 11.sp,
+                                        color = TextSecondary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Search Bar
+                item {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        label = { Text("Search local or remote models...") },
+                        leadingIcon = { Icon(imageVector = Icons.Default.Search, contentDescription = null, tint = NeonCyan) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("model_search_input"),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = NeonCyan,
+                            unfocusedBorderColor = GlassSurfaceVariant
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
+
+                // Filter Tabs
+                item {
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        item { ModelFilterChip("All (${models.size})", "ALL", selectedFilter) { selectedFilter = "ALL" } }
+                        item { ModelFilterChip("Downloaded (${downloadedModels.size})", "DOWNLOADED", selectedFilter) { selectedFilter = "DOWNLOADED" } }
+                        item { ModelFilterChip("Quantized", "QUANTIZED", selectedFilter) { selectedFilter = "QUANTIZED" } }
+                        item { ModelFilterChip("GGUF", "GGUF", selectedFilter) { selectedFilter = "GGUF" } }
+                        item { ModelFilterChip("LiteRT", "LITERET", selectedFilter) { selectedFilter = "LITERET" } }
+                        item { ModelFilterChip("ONNX", "ONNX", selectedFilter) { selectedFilter = "ONNX" } }
+                    }
+                }
+
+                // Model list
+                val filteredModels = models.filter { model ->
+                    val matchesSearch = model.name.contains(searchQuery, ignoreCase = true) || model.description.contains(searchQuery, ignoreCase = true)
+                    val matchesFilter = when (selectedFilter) {
+                        "DOWNLOADED" -> model.isDownloaded
+                        "QUANTIZED" -> model.name.contains("Q4") || model.name.contains("Q3") || model.name.contains("Q2") || model.name.contains("INT8") || model.description.contains("Quantized", ignoreCase = true)
+                        "GGUF" -> model.format.equals("GGUF", ignoreCase = true)
+                        "LITERET" -> model.format.equals("LITERET", ignoreCase = true)
+                        "ONNX" -> model.format.equals("ONNX", ignoreCase = true)
+                        else -> true
+                    }
+                    matchesSearch && matchesFilter
+                }
+
+                items(filteredModels) { model ->
+                    val isCompatible = availRamMb >= model.ramRequiredMb
+                    val isLoadedInPool = loadedModelsPool.any { it.id == model.id }
+                    val isQuantizedVariant = model.name.contains("Q4") || model.name.contains("Q3") || model.name.contains("Q2") || model.name.contains("INT8")
+
+                    SoraGlassCard(
+                        borderColor = when {
+                            isLoadedInPool -> AccentGreen
+                            isQuantizedVariant -> NeonCyan.copy(alpha = 0.5f)
+                            isCompatible -> GlassSurfaceVariant
+                            else -> ElectricPink.copy(alpha = 0.4f)
+                        },
+                        modifier = Modifier.testTag("model_card_${model.id}")
+                    ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -202,204 +629,78 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    SoraBadge(text = "CURRENTLY LOADED IN MEMORY", color = AccentGreen)
+                                    SoraBadge(text = model.format, color = NeonCyan)
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    SoraBadge(text = activeLoadedModel!!.format, color = NeonCyan)
-                                }
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = activeLoadedModel!!.name,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = TextPrimary
-                                )
-                                Text(
-                                    text = "Ready for on-device generation & Local REST API server",
-                                    fontSize = 11.sp,
-                                    color = TextSecondary
-                                )
-                            }
-
-                            Button(
-                                onClick = { viewModel.selectTab(SoraTab.SORA_CLOUD) },
-                                colors = ButtonDefaults.buttonColors(containerColor = AccentGreen),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Icon(imageVector = Icons.Default.Dns, contentDescription = null, tint = DeepDarkBg, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Open Server", color = DeepDarkBg, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Search Bar
-            item {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    label = { Text("Search local or remote models...") },
-                    leadingIcon = { Icon(imageVector = Icons.Default.Search, contentDescription = null, tint = NeonCyan) },
-                    modifier = Modifier.fillMaxWidth().testTag("model_search_input"),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = NeonCyan,
-                        unfocusedBorderColor = GlassSurfaceVariant
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                )
-            }
-
-            // Filter Tabs
-            item {
-                val filteredModels = models.filter { model ->
-                    val matchesSearch = model.name.contains(searchQuery, ignoreCase = true) || model.description.contains(searchQuery, ignoreCase = true)
-                    val matchesFilter = when (selectedFilter) {
-                        "DOWNLOADED" -> model.isDownloaded
-                        "GGUF" -> model.format.equals("GGUF", ignoreCase = true)
-                        "LITERET" -> model.format.equals("LITERET", ignoreCase = true)
-                        "ONNX" -> model.format.equals("ONNX", ignoreCase = true)
-                        "SAFETENSORS" -> model.format.contains("SAFE", ignoreCase = true)
-                        "MNN_NCNN" -> model.format.contains("MNN", ignoreCase = true) || model.format.contains("NCNN", ignoreCase = true)
-                        "VIDEO_MODELS" -> model.description.contains("VIDEO", ignoreCase = true) || model.name.contains("Video", ignoreCase = true)
-                        else -> true
-                    }
-                    matchesSearch && matchesFilter
-                }
-
-                LazyRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    item { ModelFilterChip("All (${models.size})", "ALL", selectedFilter) { selectedFilter = "ALL" } }
-                    item { ModelFilterChip("Downloaded", "DOWNLOADED", selectedFilter) { selectedFilter = "DOWNLOADED" } }
-                    item { ModelFilterChip("GGUF", "GGUF", selectedFilter) { selectedFilter = "GGUF" } }
-                    item { ModelFilterChip("LiteRT", "LITERET", selectedFilter) { selectedFilter = "LITERET" } }
-                    item { ModelFilterChip("ONNX", "ONNX", selectedFilter) { selectedFilter = "ONNX" } }
-                    item { ModelFilterChip("Safetensors", "SAFETENSORS", selectedFilter) { selectedFilter = "SAFETENSORS" } }
-                    item { ModelFilterChip("Video AI", "VIDEO_MODELS", selectedFilter) { selectedFilter = "VIDEO_MODELS" } }
-                }
-            }
-
-            // Filtered Models List
-            val filteredModels = models.filter { model ->
-                val matchesSearch = model.name.contains(searchQuery, ignoreCase = true) || model.description.contains(searchQuery, ignoreCase = true)
-                val matchesFilter = when (selectedFilter) {
-                    "DOWNLOADED" -> model.isDownloaded
-                    "GGUF" -> model.format.equals("GGUF", ignoreCase = true)
-                    "LITERET" -> model.format.equals("LITERET", ignoreCase = true)
-                    "ONNX" -> model.format.equals("ONNX", ignoreCase = true)
-                    "SAFETENSORS" -> model.format.contains("SAFE", ignoreCase = true)
-                    "MNN_NCNN" -> model.format.contains("MNN", ignoreCase = true) || model.format.contains("NCNN", ignoreCase = true)
-                    "VIDEO_MODELS" -> model.description.contains("VIDEO", ignoreCase = true) || model.name.contains("Video", ignoreCase = true)
-                    else -> true
-                }
-                matchesSearch && matchesFilter
-            }
-
-            items(filteredModels) { model ->
-                val availRamMb = ((hardware?.availableRamGb ?: 4.0f) * 1024).toInt()
-                val isCompatible = availRamMb >= model.ramRequiredMb
-                val isActiveModel = activeLoadedModel?.id == model.id
-
-                SoraGlassCard(
-                    borderColor = when {
-                        isActiveModel -> AccentGreen
-                        isCompatible -> NeonCyan.copy(alpha = 0.3f)
-                        else -> AccentRed.copy(alpha = 0.4f)
-                    },
-                    modifier = Modifier.testTag("model_card_${model.id}")
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                SoraBadge(text = model.format, color = NeonCyan)
-                                Spacer(modifier = Modifier.width(6.dp))
-                                SoraBadge(
-                                    text = "${model.ramRequiredMb}MB RAM",
-                                    color = if (isCompatible) AccentGreen else AccentRed,
-                                    textColor = TextPrimary
-                                )
-                                if (model.isDownloaded) {
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    val isSd = model.localPath?.contains("sdcard", ignoreCase = true) == true
                                     SoraBadge(
-                                        text = if (isSd) "💾 SD CARD" else "📱 PHONE STORAGE",
-                                        color = if (isSd) AccentGreen else NeonPurple
+                                        text = "${model.ramRequiredMb}MB RAM",
+                                        color = if (isCompatible) AccentGreen else ElectricPink,
+                                        textColor = TextPrimary
                                     )
+                                    if (isQuantizedVariant) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        SoraBadge(text = "⚡ QUANTIZED", color = NeonCyan)
+                                    }
+                                    if (isLoadedInPool) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        SoraBadge(text = "ACTIVE IN RAM", color = AccentGreen)
+                                    }
                                 }
-                                if (isActiveModel) {
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    SoraBadge(text = "ACTIVE IN MEMORY", color = AccentGreen)
-                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(text = model.name, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                Text(text = model.description, fontSize = 11.sp, color = TextSecondary)
                             }
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(text = model.name, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                            Text(text = model.description, fontSize = 12.sp, color = TextSecondary)
-                            if (model.localPath != null) {
-                                Text(text = "Path: ${model.localPath}", fontSize = 10.sp, color = TextSecondary)
-                            }
-                        }
 
-                        if (model.isDownloaded) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                if (isActiveModel) {
+                            if (model.isDownloaded) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
                                     OutlinedButton(
-                                        onClick = { viewModel.unloadActiveModel() },
+                                        onClick = { modelToQuantize = model },
                                         shape = RoundedCornerShape(8.dp),
-                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = AccentRed),
-                                        modifier = Modifier.testTag("unload_model_btn_${model.id}")
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonCyan),
+                                        modifier = Modifier.testTag("quantize_model_btn_${model.id}")
                                     ) {
-                                        Text("Unload", fontSize = 11.sp)
+                                        Icon(imageVector = Icons.Default.Compress, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(if (isQuantizedVariant) "Re-Quantize" else "Quantize", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                     }
-                                } else {
-                                    Button(
-                                        onClick = { viewModel.loadModelForServer(model) },
-                                        shape = RoundedCornerShape(8.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
-                                        modifier = Modifier.testTag("load_model_btn_${model.id}")
-                                    ) {
-                                        Text("Load Model", fontSize = 11.sp, color = DeepDarkBg, fontWeight = FontWeight.Bold)
+
+                                    if (isLoadedInPool) {
+                                        OutlinedButton(
+                                            onClick = { viewModel.unloadSpecificModel(model.id) },
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = AccentRed)
+                                        ) {
+                                            Text("Unload", fontSize = 11.sp)
+                                        }
+                                    } else {
+                                        Button(
+                                            onClick = { viewModel.loadModelForServer(model, keepOthers = true) },
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = if (isCompatible) AccentGreen else NeonPurple)
+                                        ) {
+                                            Text(
+                                                text = if (isCompatible) "+ Load" else "⚡ Force",
+                                                fontSize = 11.sp,
+                                                color = DeepDarkBg,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
                                     }
                                 }
-                            }
-                        } else {
-                            Button(
-                                onClick = {
-                                    modelToDownload = model
-                                },
-                                shape = RoundedCornerShape(8.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = ElectricPink),
-                                modifier = Modifier.testTag("download_model_btn_${model.id}")
-                            ) {
-                                Icon(imageVector = Icons.Default.GetApp, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Download", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                            } else {
+                                Button(
+                                    onClick = { modelToDownload = model },
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = ElectricPink)
+                                ) {
+                                    Icon(imageVector = Icons.Default.GetApp, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Download", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Divider(color = GlassSurfaceVariant)
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(text = "Recommended: ${model.recommendedResolution} @ ${model.recommendedFps}fps", fontSize = 11.sp, color = TextSecondary)
-                        Text(
-                            text = if (isActiveModel) "Active for Local API Server & Inference"
-                            else if (isCompatible) "Ready for Inference"
-                            else "RAM Exceeded (${availRamMb}MB Avail)",
-                            fontSize = 11.sp,
-                            color = if (isActiveModel || isCompatible) AccentGreen else AccentRed
-                        )
                     }
                 }
             }
@@ -424,9 +725,231 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
         }
     }
 
-    // ==========================================
-    // 1. DIALOG: Manual Model Import (+)
-    // ==========================================
+    // =========================================================================
+    // ADVANCED RECURSIVE QUANTIZATION DIALOG (5-5000 Iterations & 4 Tradeoffs)
+    // =========================================================================
+    val quantModel = modelToQuantize
+    if (quantModel != null) {
+        var selectedPrecision by remember { mutableStateOf(QuantizationPrecision.Q4_K_M) }
+        var selectedObjective by remember { mutableStateOf(QuantizationTradeoffObjective.BALANCED_MULTI_OBJECTIVE) }
+        var iterationsCount by remember { mutableStateOf(if (quantModel.sizeBytes > 1_500_000_000L) 250 else 50) }
+        var selectedStorage by remember { mutableStateOf("INTERNAL") }
+        var chunkSizeMb by remember { mutableStateOf(64) }
+        var cpuThreads by remember { mutableStateOf(4) }
+
+        val origRam = quantModel.ramRequiredMb
+        val targetRam = ((origRam * selectedPrecision.ramReductionFactor) * selectedObjective.ramFactorMultiplier).toInt().coerceAtLeast(350)
+        val ramSavedMb = (origRam - targetRam).coerceAtLeast(0)
+        val ramSavedPct = if (origRam > 0) ((ramSavedMb.toFloat() / origRam.toFloat()) * 100).toInt() else 50
+        val isAlreadyQuant = quantModel.name.contains("Q4") || quantModel.name.contains("Q3") || quantModel.name.contains("Q2") || quantModel.name.contains("INT8")
+
+        AlertDialog(
+            onDismissRequest = { modelToQuantize = null },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(imageVector = Icons.Default.Compress, contentDescription = null, tint = NeonCyan)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        if (isAlreadyQuant) "Recursive Re-Quantization Utility" else "Advanced Model Quantization",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 500.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (isAlreadyQuant) {
+                        Surface(
+                            color = ElectricPink.copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, ElectricPink.copy(alpha = 0.5f))
+                        ) {
+                            Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(imageVector = Icons.Default.AutoMode, contentDescription = null, tint = ElectricPink, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "This model is already quantized. Re-quantization will apply recursive multi-pass calibration to compress it further.",
+                                    fontSize = 10.5.sp,
+                                    color = TextPrimary
+                                )
+                            }
+                        }
+                    }
+
+                    // Target Precision Format
+                    Text(text = "Target Precision Format:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = NeonCyan)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(QuantizationPrecision.entries) { precision ->
+                            val isSelected = selectedPrecision == precision
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isSelected) NeonCyan else GlassSurface,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) NeonCyan else GlassSurfaceVariant),
+                                modifier = Modifier.clickable { selectedPrecision = precision }
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                                    Text(text = precision.id, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (isSelected) DeepDarkBg else TextPrimary)
+                                    Text(text = "${precision.bitsPerWeight} bits", fontSize = 9.sp, color = if (isSelected) DeepDarkBg.copy(alpha = 0.8f) else TextSecondary)
+                                }
+                            }
+                        }
+                    }
+
+                    // 4 Quantization Tradeoff Dimensions
+                    Text(text = "Quantization Trade-off Objective:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = NeonPurple)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(QuantizationTradeoffObjective.entries) { objective ->
+                            val isSelected = selectedObjective == objective
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isSelected) NeonPurple else GlassSurface,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) NeonPurple else GlassSurfaceVariant),
+                                modifier = Modifier.clickable { selectedObjective = objective }
+                            ) {
+                                Text(
+                                    text = objective.badgeLabel,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isSelected) Color.White else TextPrimary,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Text(
+                        text = selectedObjective.description,
+                        fontSize = 10.sp,
+                        color = TextSecondary
+                    )
+
+                    // Optimization Iterations (5 to 5000 for large, 3 to 1000 for low)
+                    val maxIter = if (quantModel.sizeBytes > 1_500_000_000L) 5000 else 1000
+                    val minIter = if (quantModel.sizeBytes > 1_500_000_000L) 5 else 3
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(text = "Iterations ($minIter to $maxIter passes):", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                        Text(text = "$iterationsCount passes", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = NeonCyan)
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(minIter, 25, 100, 500, if (maxIter == 5000) 2500 else 1000).forEach { count ->
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = if (iterationsCount == count) NeonCyan else GlassSurface,
+                                modifier = Modifier.clickable { iterationsCount = count }
+                            ) {
+                                Text(
+                                    text = "${count}x",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (iterationsCount == count) DeepDarkBg else TextPrimary,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // RAM & Savings Preview Card
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(GlassSurfaceVariant, RoundedCornerShape(8.dp))
+                            .border(1.dp, AccentGreen.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                            .padding(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text(text = "Memory Footprint", fontSize = 10.sp, color = TextSecondary)
+                                Text(text = "${origRam}MB ➔ ${targetRam}MB", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = AccentGreen)
+                            }
+                            Column {
+                                Text(text = "RAM Saved", fontSize = 10.sp, color = TextSecondary)
+                                Text(text = "-$ramSavedPct% ($ramSavedMb MB)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = ElectricPink)
+                            }
+                            Column {
+                                Text(text = "Estimated Speed", fontSize = 10.sp, color = TextSecondary)
+                                Text(text = "+${((selectedObjective.speedMultiplier - 1f) * 100).toInt()}% FPS", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = NeonCyan)
+                            }
+                        }
+                    }
+
+                    // Storage Selection
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (selectedStorage == "INTERNAL") NeonCyan.copy(alpha = 0.2f) else GlassSurface,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, if (selectedStorage == "INTERNAL") NeonCyan else GlassSurfaceVariant),
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { selectedStorage = "INTERNAL" }
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Text(text = "📱 Phone Storage", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (selectedStorage == "SD_CARD") AccentGreen.copy(alpha = 0.2f) else GlassSurface,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, if (selectedStorage == "SD_CARD") AccentGreen else GlassSurfaceVariant),
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { selectedStorage = "SD_CARD" }
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Text(text = "💾 SD Card", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.startModelQuantization(
+                            model = quantModel,
+                            precision = selectedPrecision,
+                            tradeoffObjective = selectedObjective,
+                            iterationsCount = iterationsCount,
+                            storageType = selectedStorage,
+                            chunkSizeMb = chunkSizeMb,
+                            cpuThreads = cpuThreads
+                        )
+                        modelToQuantize = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(imageVector = Icons.Default.Bolt, contentDescription = null, tint = DeepDarkBg, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Execute Quantization ($iterationsCount Passes)", color = DeepDarkBg, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { modelToQuantize = null }) {
+                    Text("Cancel", color = TextSecondary)
+                }
+            }
+        )
+    }
+
+    // Manual Import Dialog
     if (showImportDialog) {
         AlertDialog(
             onDismissRequest = { showImportDialog = false },
@@ -434,7 +957,7 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(imageVector = Icons.Default.AddCircle, contentDescription = null, tint = NeonCyan)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Upload Model from Storage / SD Card", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text("Upload Model from Phone / SD Card", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
             },
             text = {
@@ -442,70 +965,26 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text(
-                        text = "Pick an AI model file from your Phone Storage or SD Card folder (.gguf, .safetensors, .litert, .onnx):",
-                        fontSize = 12.sp,
-                        color = TextSecondary
-                    )
-
-                    // File picker trigger buttons
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Button(
-                            onClick = {
-                                modelFilePicker.launch(arrayOf("*/*"))
-                            },
+                            onClick = { modelFilePicker.launch(arrayOf("*/*")) },
                             colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Icon(imageVector = Icons.Default.FolderOpen, contentDescription = null, tint = DeepDarkBg, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
                             Text("📱 Phone Files", fontSize = 11.sp, color = DeepDarkBg, fontWeight = FontWeight.Bold)
                         }
 
                         Button(
-                            onClick = {
-                                modelFilePicker.launch(arrayOf("*/*"))
-                            },
+                            onClick = { modelFilePicker.launch(arrayOf("*/*")) },
                             colors = ButtonDefaults.buttonColors(containerColor = AccentGreen),
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Icon(imageVector = Icons.Default.SdCard, contentDescription = null, tint = DeepDarkBg, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
                             Text("💾 SD Card", fontSize = 11.sp, color = DeepDarkBg, fontWeight = FontWeight.Bold)
-                        }
-                    }
-
-                    // Quick Preset choices
-                    Text(text = "Or quick load sample models:", fontSize = 11.sp, color = TextSecondary)
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        item {
-                            TypeChip("📱 Phone: Sora-LiteRT-v2", "PHONE", "MODEL") {
-                                importModelName = "Sora-LiteRT-v2"
-                                importFormat = "LITERET"
-                                importPath = "/storage/emulated/0/ai_models/sora_litert_v2.tflite"
-                                importStorageSource = "Phone Storage"
-                            }
-                        }
-                        item {
-                            TypeChip("💾 SD Card: Llama-3.2-3B.gguf", "SD", "MODEL") {
-                                importModelName = "Llama-3.2-3B-Q4_K_M"
-                                importFormat = "GGUF"
-                                importPath = "/storage/sdcard/models/llama-3.2-3b.gguf"
-                                importStorageSource = "SD Card Storage"
-                            }
-                        }
-                        item {
-                            TypeChip("💾 SD Card: AnimateDiff-v3", "SD", "MODEL") {
-                                importModelName = "AnimateDiff-v3-SD15"
-                                importFormat = "SAFETENSORS"
-                                importPath = "/storage/sdcard/ai_models/animatediff_v3.safetensors"
-                                importStorageSource = "SD Card Storage"
-                            }
                         }
                     }
 
@@ -540,18 +1019,10 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
                     OutlinedTextField(
                         value = importPath,
                         onValueChange = { importPath = it },
-                        label = { Text("File Path / URI on Storage") },
+                        label = { Text("File Path / URI") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(text = "Storage Source: ", fontSize = 11.sp, color = TextSecondary)
-                        SoraBadge(
-                            text = importStorageSource,
-                            color = if (importStorageSource.contains("SD")) AccentGreen else NeonPurple
-                        )
-                    }
                 }
             },
             confirmButton = {
@@ -583,9 +1054,7 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
         )
     }
 
-    // =======================================================
-    // 2. DIALOG: Choose Download Storage Location for Model
-    // =======================================================
+    // Choose Download Destination Dialog
     val targetModel = modelToDownload
     if (targetModel != null) {
         AlertDialog(
@@ -594,7 +1063,7 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(imageVector = Icons.Default.CloudDownload, contentDescription = null, tint = NeonCyan)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Choose Download Destination", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text("Download Destination", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
             },
             text = {
@@ -602,13 +1071,8 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text(
-                        text = "Select where to save \"${targetModel.name}\" on your device:",
-                        fontSize = 13.sp,
-                        color = TextPrimary
-                    )
+                    Text(text = "Save \"${targetModel.name}\" to:", fontSize = 13.sp, color = TextPrimary)
 
-                    // Option 1: Internal Phone Storage
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -627,12 +1091,11 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
                             Spacer(modifier = Modifier.width(6.dp))
                             Column {
                                 Text(text = "📱 Phone Internal Storage", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                Text(text = "/data/user/0/.../files/ai_models (58.4 GB Free)", fontSize = 11.sp, color = TextSecondary)
+                                Text(text = "Fast internal storage", fontSize = 11.sp, color = TextSecondary)
                             }
                         }
                     }
 
-                    // Option 2: SD Card Storage
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -650,57 +1113,8 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Column {
-                                Text(text = "💾 Removable SD Card Storage", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                Text(text = "/storage/sdcard/ai_models (124.8 GB Free)", fontSize = 11.sp, color = TextSecondary)
-                            }
-                        }
-                    }
-
-                    // Option 3: Custom Folder Path
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (selectedDownloadStorage == "CUSTOM") NeonPurple.copy(alpha = 0.15f) else GlassSurface)
-                            .border(1.dp, if (selectedDownloadStorage == "CUSTOM") NeonPurple else GlassSurfaceVariant, RoundedCornerShape(8.dp))
-                            .clickable { selectedDownloadStorage = "CUSTOM" }
-                            .padding(10.dp)
-                    ) {
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                RadioButton(
-                                    selected = selectedDownloadStorage == "CUSTOM",
-                                    onClick = { selectedDownloadStorage = "CUSTOM" },
-                                    colors = RadioButtonDefaults.colors(selectedColor = NeonPurple)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Column {
-                                    Text(text = "📂 Custom Directory Path", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                    Text(text = "Choose any folder on Phone or SD card", fontSize = 11.sp, color = TextSecondary)
-                                }
-                            }
-                            if (selectedDownloadStorage == "CUSTOM") {
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    OutlinedTextField(
-                                        value = customDownloadPath,
-                                        onValueChange = { customDownloadPath = it },
-                                        modifier = Modifier.weight(1f),
-                                        singleLine = true,
-                                        textStyle = LocalTextStyle.current.copy(fontSize = 11.sp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Button(
-                                        onClick = { folderPicker.launch(null) },
-                                        colors = ButtonDefaults.buttonColors(containerColor = NeonPurple),
-                                        shape = RoundedCornerShape(8.dp)
-                                    ) {
-                                        Text("Browse", fontSize = 10.sp)
-                                    }
-                                }
+                                Text(text = "💾 Removable SD Card", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                Text(text = "Save phone memory space", fontSize = 11.sp, color = TextSecondary)
                             }
                         }
                     }
@@ -724,6 +1138,42 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
                 }
             }
         )
+    }
+}
+
+@Composable
+fun TabPill(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = if (isSelected) NeonCyan else GlassSurface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) NeonCyan else GlassSurfaceVariant),
+        modifier = modifier.clickable { onClick() }
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (isSelected) DeepDarkBg else TextSecondary,
+                modifier = Modifier.size(14.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = label,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (isSelected) DeepDarkBg else TextPrimary
+            )
+        }
     }
 }
 

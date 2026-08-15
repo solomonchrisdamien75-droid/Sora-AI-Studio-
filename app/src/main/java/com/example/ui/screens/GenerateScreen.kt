@@ -211,6 +211,10 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
         // Active Real-time Render Progress Monitor
         val job = activeJob
         if (job != null && job.status == "RUNNING") {
+            val estimatedSec = (job.durationSeconds * 2).coerceAtLeast(4)
+            val elapsedSec = ((job.currentFrame.toFloat() / job.totalFrames.coerceAtLeast(1).toFloat()) * estimatedSec).toInt()
+            val remainingSec = (estimatedSec - elapsedSec).coerceAtLeast(1)
+
             item {
                 SoraGlassCard(borderColor = NeonCyan) {
                     Row(
@@ -226,17 +230,47 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
                                 strokeWidth = 3.dp
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Rendering Frames: ${job.currentFrame} / ${job.totalFrames}",
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TextPrimary
-                            )
+                            Column {
+                                Text(
+                                    text = "Rendering Frames: ${job.currentFrame} / ${job.totalFrames}",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary
+                                )
+                                Text(
+                                    text = "⏱️ Required Time: ~${estimatedSec}s (ETA: ${remainingSec}s remaining)",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = AccentGreen
+                                )
+                            }
                         }
                         SoraBadge(text = "${job.progressPercent}%", color = NeonCyan)
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Helpful user notice allowing them to leave the app safely
+                    Surface(
+                        color = AccentGreen.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(8.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, AccentGreen.copy(alpha = 0.4f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(imageVector = Icons.Default.CheckCircleOutline, contentDescription = null, tint = AccentGreen, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Background Engine Active: You can safely switch tabs or leave the app. The task will complete automatically.",
+                                fontSize = 10.5.sp,
+                                color = TextPrimary
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     LinearProgressIndicator(
                         progress = { job.progressPercent / 100f },
@@ -247,6 +281,7 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
                         color = NeonCyan,
                         trackColor = GlassSurfaceVariant
                     )
+
 
                     Spacer(modifier = Modifier.height(12.dp))
 
@@ -864,12 +899,21 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
         item {
             Spacer(modifier = Modifier.height(8.dp))
             SoraGradientButton(
-                text = if (form.isGenerating) "Generation In Progress..." else "START IMMEDIATE GENERATION",
-                icon = Icons.Default.PlayArrow,
-                enabled = !form.isGenerating,
+                text = if (form.isGenerating) "⚡ GENERATE & QUEUE NEXT (BACKGROUND)" else "START IMMEDIATE GENERATION",
+                icon = if (form.isGenerating) Icons.Default.AddCircle else Icons.Default.PlayArrow,
+                enabled = true,
                 modifier = Modifier.fillMaxWidth().testTag("start_generation_button"),
                 onClick = { viewModel.startGeneration() }
             )
+
+            if (form.isGenerating) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "💡 Engine is actively running in background. Tapping Generate adds this configuration immediately to the background execution pipeline so you can queue multiple tasks and leave the app safely.",
+                    fontSize = 10.5.sp,
+                    color = AccentGreen
+                )
+            }
 
             Spacer(modifier = Modifier.height(10.dp))
 
@@ -900,6 +944,7 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
                 }
             }
         }
+
     }
 
     if (showBatchDialog) {

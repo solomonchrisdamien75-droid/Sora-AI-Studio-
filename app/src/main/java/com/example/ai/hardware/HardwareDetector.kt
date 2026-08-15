@@ -124,8 +124,8 @@ class HardwareDetector(private val context: Context) {
 
         return if (availRamMb < requiredRamMb) {
             Pair(
-                false,
-                "Model requires ${requiredRamMb}MB RAM, but only ${availRamMb}MB RAM is available. Connect to Sora Cloud or free up device memory."
+                true,
+                "Warning: Model requires ${requiredRamMb}MB RAM, but device has ${availRamMb}MB RAM. Force-loading model directly into memory (RAM limits bypassed)."
             )
         } else {
             Pair(true, "Hardware compatible (${availRamMb}MB RAM available).")

@@ -1,5 +1,8 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -7,6 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -16,8 +20,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -28,16 +36,29 @@ import com.example.ui.SoraMainViewModel
 import com.example.ui.SoraTab
 import com.example.ui.components.*
 import com.example.ui.theme.*
+import kotlinx.coroutines.delay
 
 @Composable
 fun EditorScreen(viewModel: SoraMainViewModel) {
     val project by viewModel.editorProject.collectAsState()
+    val activeClipIdFromVm by viewModel.activeEditorClipId.collectAsState()
     var selectedClip by remember { mutableStateOf<MediaClipTrack?>(null) }
     var selectedRatio by remember { mutableStateOf(AspectRatioPreset.RATIO_16_9) }
     var selectedResolution by remember { mutableStateOf(ExportResolution.RES_1080P) }
     val latestExport by viewModel.latestExportedResult.collectAsState()
 
-    val activeSelectedClip = project.videoClips.find { it.id == selectedClip?.id } ?: project.videoClips.firstOrNull()
+    // Sync selected clip when ViewModel updates active clip
+    LaunchedEffect(activeClipIdFromVm, project.videoClips) {
+        if (activeClipIdFromVm != null) {
+            val matching = project.videoClips.find { it.id == activeClipIdFromVm }
+            if (matching != null) {
+                selectedClip = matching
+            }
+        }
+    }
+
+    val activeSelectedClip = project.videoClips.find { it.id == selectedClip?.id } 
+        ?: project.videoClips.firstOrNull()
 
     var activeSubToolTab by remember { mutableStateOf("VELOCITY") } // DURATION, FRAMES, VELOCITY, AI_EFFECTS, TRANSITIONS, SUBTITLES, AUDIO_VOICE, CUTOUT
 
@@ -167,24 +188,14 @@ fun EditorScreen(viewModel: SoraMainViewModel) {
             }
         }
 
-        // Preview Viewport Canvas
+        // Live Interactive Video Player & Preview Viewport Canvas
         item {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(210.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(GlassSurfaceVariant)
-                    .border(1.dp, NeonCyan.copy(alpha = 0.4f), RoundedCornerShape(16.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(imageVector = Icons.Default.PlayCircle, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(48.dp))
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(text = "Timeline Canvas (${selectedRatio.label})", fontSize = 13.sp, color = TextPrimary, fontWeight = FontWeight.Bold)
-                    Text(text = "${project.videoClips.size} Tracks Loaded • CapCut AI FX Engine Active", fontSize = 11.sp, color = TextSecondary)
-                }
-            }
+            EditorStudioPlayerViewport(
+                project = project,
+                activeClip = activeSelectedClip,
+                selectedRatio = selectedRatio,
+                viewModel = viewModel
+            )
         }
 
         // Aspect Ratio & Resolution Selector
@@ -786,3 +797,384 @@ fun ResChip(label: String, targetRes: ExportResolution, currentRes: ExportResolu
         Text(text = label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (isSelected) TextPrimary else TextSecondary)
     }
 }
+
+@Composable
+fun EditorStudioPlayerViewport(
+    project: com.example.editor.VideoEditorProject,
+    activeClip: MediaClipTrack?,
+    selectedRatio: AspectRatioPreset,
+    viewModel: SoraMainViewModel
+) {
+    val clipDuration = activeClip?.durationMs ?: if (project.videoClips.isNotEmpty()) project.videoClips.sumOf { it.durationMs } else 5000L
+    val totalDurationMs = if (clipDuration > 0) clipDuration else 5000L
+
+    var isPlaying by remember { mutableStateOf(false) }
+    var currentPlayheadMs by remember { mutableStateOf(0L) }
+    var isLooping by remember { mutableStateOf(true) }
+    var isMuted by remember { mutableStateOf(false) }
+
+    val clipTitle = activeClip?.title ?: if (project.videoClips.isNotEmpty()) project.videoClips.first().title else "No Clip Loaded"
+    val baseHue = remember(clipTitle) {
+        (clipTitle.hashCode() % 360).let { if (it < 0) it + 360 else it }.toFloat()
+    }
+
+    // Dynamic Playback Speed based on active clip's curve or playbackSpeed
+    val speedMultiplier = activeClip?.playbackSpeed ?: 1.0f
+
+    // Playback loop
+    LaunchedEffect(isPlaying, totalDurationMs, speedMultiplier, isLooping) {
+        if (isPlaying) {
+            val stepMs = 50L
+            while (isPlaying) {
+                delay(stepMs)
+                val increment = (stepMs * speedMultiplier).toLong()
+                val next = currentPlayheadMs + increment
+                if (next >= totalDurationMs) {
+                    if (isLooping) {
+                        currentPlayheadMs = 0L
+                    } else {
+                        currentPlayheadMs = totalDurationMs
+                        isPlaying = false
+                    }
+                } else {
+                    currentPlayheadMs = next
+                }
+            }
+        }
+    }
+
+    // Animation sweep
+    val infiniteTransition = rememberInfiniteTransition(label = "editor_player_scanner")
+    val scanPhase by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2200, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "scan_phase"
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(GlassSurface)
+            .border(1.dp, NeonCyan.copy(alpha = 0.45f), RoundedCornerShape(16.dp))
+            .padding(12.dp)
+    ) {
+        // Top Header of Viewport
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.LiveTv,
+                    contentDescription = null,
+                    tint = NeonCyan,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "Player Canvas • ${selectedRatio.label}",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (activeClip != null && activeClip.filterName != "Normal") {
+                    SoraBadge(text = activeClip.filterName, color = ElectricPink)
+                }
+                Spacer(modifier = Modifier.width(6.dp))
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = DeepDarkBg,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, if (isPlaying) AccentGreen else TextSecondary.copy(alpha = 0.4f))
+                ) {
+                    Text(
+                        text = if (isPlaying) "● LIVE" else "PAUSED",
+                        fontSize = 9.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = if (isPlaying) AccentGreen else TextSecondary,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Screen Canvas Viewport Box
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(200.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(DeepDarkBg)
+                .border(1.dp, NeonCyan.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+        ) {
+            // Dynamic Video Rendering Canvas
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val progress = (currentPlayheadMs.toFloat() / totalDurationMs.toFloat()).coerceIn(0f, 1f)
+                val dynamicHue = (baseHue + progress * 80f) % 360f
+
+                // Color grading filter tinting
+                val filterColor = when (activeClip?.filterName) {
+                    "Cyberpunk Cyan" -> Color(0xFF00E5FF)
+                    "Vintage Film" -> Color(0xFFFFB300)
+                    "Noir Monochrome" -> Color(0xFF9E9E9E)
+                    "Neon Vivid" -> Color(0xFFFF007F)
+                    "CapCut Teal/Orange" -> Color(0xFF00B4D8)
+                    else -> Color.hsl(dynamicHue, 0.75f, 0.25f)
+                }
+
+                val grad = Brush.radialGradient(
+                    colors = listOf(
+                        filterColor.copy(alpha = 0.75f),
+                        Color.hsl((dynamicHue + 30f) % 360f, 0.5f, 0.12f),
+                        DeepDarkBg
+                    ),
+                    center = Offset(size.width * (0.35f + 0.3f * progress), size.height * 0.5f),
+                    radius = size.width * 0.75f
+                )
+                drawRect(brush = grad)
+
+                // Scanline effect
+                val scanY = size.height * scanPhase
+                drawLine(
+                    color = NeonCyan.copy(alpha = 0.2f),
+                    start = Offset(0f, scanY),
+                    end = Offset(size.width, scanY),
+                    strokeWidth = 1.5f
+                )
+
+                // Aspect Ratio Framing Pillarboxes/Letterboxes
+                when (selectedRatio) {
+                    AspectRatioPreset.RATIO_9_16 -> {
+                        val verticalWidth = size.height * (9f / 16f)
+                        val sideMargin = (size.width - verticalWidth) / 2f
+                        if (sideMargin > 0f) {
+                            drawRect(color = Color.Black.copy(alpha = 0.65f), size = androidx.compose.ui.geometry.Size(sideMargin, size.height))
+                            drawRect(
+                                color = Color.Black.copy(alpha = 0.65f),
+                                topLeft = Offset(size.width - sideMargin, 0f),
+                                size = androidx.compose.ui.geometry.Size(sideMargin, size.height)
+                            )
+                            drawRect(
+                                color = NeonCyan.copy(alpha = 0.4f),
+                                topLeft = Offset(sideMargin, 0f),
+                                size = androidx.compose.ui.geometry.Size(verticalWidth, size.height),
+                                style = Stroke(width = 1.dp.toPx())
+                            )
+                        }
+                    }
+                    AspectRatioPreset.RATIO_1_1 -> {
+                        val squareSide = size.height
+                        val sideMargin = (size.width - squareSide) / 2f
+                        if (sideMargin > 0f) {
+                            drawRect(color = Color.Black.copy(alpha = 0.6f), size = androidx.compose.ui.geometry.Size(sideMargin, size.height))
+                            drawRect(
+                                color = Color.Black.copy(alpha = 0.6f),
+                                topLeft = Offset(size.width - sideMargin, 0f),
+                                size = androidx.compose.ui.geometry.Size(sideMargin, size.height)
+                            )
+                        }
+                    }
+                    else -> {}
+                }
+            }
+
+            // Overlay Metadata Badges
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(8.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                // Top Tag: Active Clip Name & FX indicators
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = Color.Black.copy(alpha = 0.75f)
+                    ) {
+                        Text(
+                            text = "🎬 $clipTitle",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = NeonCyan,
+                            maxLines = 1,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (activeClip?.velocityCurve != null && activeClip.velocityCurve != "NONE") {
+                            Surface(shape = RoundedCornerShape(4.dp), color = ElectricPink.copy(alpha = 0.85f)) {
+                                Text(
+                                    text = "⚡ ${activeClip.velocityCurve}",
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                        if (activeClip?.aiStyleEffect != null && activeClip.aiStyleEffect != "NONE") {
+                            Surface(shape = RoundedCornerShape(4.dp), color = NeonPurple.copy(alpha = 0.85f)) {
+                                Text(
+                                    text = "🌟 ${activeClip.aiStyleEffect}",
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Center Big Play/Pause Toggle
+                Box(
+                    modifier = Modifier
+                        .size(46.dp)
+                        .align(Alignment.CenterHorizontally)
+                        .clip(CircleShape)
+                        .background(DeepDarkBg.copy(alpha = 0.7f))
+                        .border(1.dp, NeonCyan, CircleShape)
+                        .clickable { isPlaying = !isPlaying }
+                        .testTag("editor_player_play_pause_btn"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = if (isPlaying) "Pause" else "Play",
+                        tint = NeonCyan,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+
+                // Bottom Subtitle & Timecode overlay
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    // Kinetic Subtitle banner if captions active on clip
+                    if (!activeClip?.textOverlay.isNullOrBlank()) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = Color.Black.copy(alpha = 0.8f),
+                            border = androidx.compose.foundation.BorderStroke(0.8.dp, AccentGreen)
+                        ) {
+                            Text(
+                                text = "💬 ${activeClip!!.textOverlay}",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = AccentGreen,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.width(1.dp))
+                    }
+
+                    // Timecode HUD
+                    val curSec = currentPlayheadMs / 1000f
+                    val totSec = totalDurationMs / 1000f
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = Color.Black.copy(alpha = 0.75f)
+                    ) {
+                        Text(
+                            text = String.format("%02d:%04.1fs / %02d:%04.1fs", (curSec / 60).toInt(), curSec % 60, (totSec / 60).toInt(), totSec % 60),
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = NeonCyan,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        // Scrubber Slider
+        Slider(
+            value = currentPlayheadMs.toFloat(),
+            onValueChange = { currentPlayheadMs = it.toLong() },
+            valueRange = 0f..totalDurationMs.toFloat(),
+            colors = SliderDefaults.colors(
+                thumbColor = NeonCyan,
+                activeTrackColor = NeonCyan,
+                inactiveTrackColor = GlassSurfaceVariant
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(24.dp)
+                .testTag("editor_player_scrubber")
+        )
+
+        // Transport Controls Row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = { currentPlayheadMs = (currentPlayheadMs - 500L).coerceAtLeast(0L) },
+                    modifier = Modifier.size(30.dp).clip(RoundedCornerShape(6.dp)).background(GlassSurfaceVariant)
+                ) {
+                    Icon(imageVector = Icons.Default.Replay5, contentDescription = "Step -0.5s", tint = TextPrimary, modifier = Modifier.size(14.dp))
+                }
+
+                FilledIconButton(
+                    onClick = { isPlaying = !isPlaying },
+                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = if (isPlaying) ElectricPink else NeonCyan),
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = if (isPlaying) "Pause" else "Play",
+                        tint = DeepDarkBg,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                IconButton(
+                    onClick = { currentPlayheadMs = (currentPlayheadMs + 500L).coerceAtMost(totalDurationMs) },
+                    modifier = Modifier.size(30.dp).clip(RoundedCornerShape(6.dp)).background(GlassSurfaceVariant)
+                ) {
+                    Icon(imageVector = Icons.Default.Forward5, contentDescription = "Step +0.5s", tint = TextPrimary, modifier = Modifier.size(14.dp))
+                }
+
+                IconButton(
+                    onClick = { isLooping = !isLooping },
+                    modifier = Modifier.size(30.dp).clip(RoundedCornerShape(6.dp)).background(if (isLooping) NeonCyan.copy(alpha = 0.2f) else GlassSurfaceVariant)
+                ) {
+                    Icon(imageVector = Icons.Default.Repeat, contentDescription = "Loop", tint = if (isLooping) NeonCyan else TextSecondary, modifier = Modifier.size(14.dp))
+                }
+            }
+
+            // Quick Info summary
+            Text(
+                text = "${project.videoClips.size} Clip(s) • ${speedMultiplier}x Speed",
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace,
+                color = TextSecondary
+            )
+        }
+    }
+}
+

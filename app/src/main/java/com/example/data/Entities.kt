@@ -87,3 +87,27 @@ data class GalleryItemEntity(
     val isFavorite: Boolean = false,
     val resolutionLabel: String = "1080p"
 )
+
+@Entity(tableName = "quantization_history")
+data class QuantizationHistoryEntity(
+    @PrimaryKey val id: String,
+    val sourceModelId: String,
+    val sourceModelName: String,
+    val quantizedModelId: String,
+    val quantizedModelName: String,
+    val precisionFormat: String, // e.g. Q4_K_M, Q3_K_S, Q2_K, INT8, INT4
+    val originalSizeBytes: Long,
+    val quantizedSizeBytes: Long,
+    val originalRamMb: Int,
+    val quantizedRamMb: Int,
+    val ramSavedPercent: Int,
+    val iterationsCount: Int = 1,
+    val tradeoffObjective: String = "BALANCED", // REDUCE_DISK_SIZE, REDUCE_RAM, REDUCE_COMPUTE, REDUCE_GEN_COST
+    val storageLocation: String = "Phone Storage",
+    val destinationPath: String? = null,
+    val createdAt: Long = System.currentTimeMillis(),
+    val isRequantized: Boolean = false,
+    val benchmarkSpeedBefore: String = "2.4 fps",
+    val benchmarkSpeedAfter: String = "5.8 fps"
+)
+

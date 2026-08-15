@@ -110,3 +110,22 @@ interface GalleryDao {
     @Delete
     suspend fun deleteItem(item: GalleryItemEntity)
 }
+
+@Dao
+interface QuantizationHistoryDao {
+    @Query("SELECT * FROM quantization_history ORDER BY createdAt DESC")
+    fun getAllHistory(): Flow<List<QuantizationHistoryEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertHistory(history: QuantizationHistoryEntity)
+
+    @Delete
+    suspend fun deleteHistory(history: QuantizationHistoryEntity)
+
+    @Query("DELETE FROM quantization_history WHERE id = :id")
+    suspend fun deleteHistoryById(id: String)
+
+    @Query("DELETE FROM quantization_history")
+    suspend fun clearAllHistory()
+}
+

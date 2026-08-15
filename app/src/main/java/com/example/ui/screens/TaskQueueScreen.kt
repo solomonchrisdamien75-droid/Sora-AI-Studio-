@@ -389,6 +389,9 @@ fun TaskQueueScreen(viewModel: SoraMainViewModel) {
                     // Order Shift & Action buttons for Queued jobs
                     if (isJobQueued) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = { viewModel.moveQueuedJobToTop(job.id) }, modifier = Modifier.size(28.dp)) {
+                                Icon(imageVector = Icons.Default.VerticalAlignTop, contentDescription = "Move to Top", tint = AccentGreen, modifier = Modifier.size(16.dp))
+                            }
                             IconButton(onClick = { viewModel.moveQueuedJob(job.id, moveUp = true) }, modifier = Modifier.size(28.dp)) {
                                 Icon(imageVector = Icons.Default.ArrowUpward, contentDescription = "Move Up", tint = NeonCyan, modifier = Modifier.size(16.dp))
                             }
