@@ -1,7 +1,10 @@
 package com.example.ai.downloader
 
 import android.content.Context
+import android.net.Uri
 import android.os.Environment
+import androidx.documentfile.provider.DocumentFile
+import com.example.ai.hardware.DeviceStorageManager
 import com.example.ai.models.ModelDownloadState
 import com.example.ai.models.ModelValidationEngine
 import com.example.ai.models.ModelValidationStatus
@@ -14,7 +17,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
-import java.io.RandomAccessFile
+import java.io.OutputStream
 
 data class DownloadProgressState(
     val modelId: String,
@@ -36,6 +39,7 @@ class ModelDownloadManager(
     private val aiModelDao: AiModelDao
 ) {
     private val validator = ModelValidationEngine(context)
+    private val storageManager = DeviceStorageManager(context)
     private val activeDownloads = mutableMapOf<String, Boolean>()
 
     fun getInternalStorageDir(): File {
@@ -43,52 +47,59 @@ class ModelDownloadManager(
     }
 
     fun getSdCardStorageDir(): File {
-        val externalDirs = context.getExternalFilesDirs(null)
-        val sdCardDir = if (externalDirs.size > 1 && externalDirs[1] != null) {
-            File(externalDirs[1], "ai_models")
-        } else {
-            File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir, "sdcard_ai_models")
-        }
-        sdCardDir.mkdirs()
-        return sdCardDir
+        return storageManager.getSdCardStorageVolume()?.modelsDirectory ?: getInternalStorageDir()
     }
 
     fun startDownload(
         model: HuggingFaceModelInfo,
-        targetDir: String? = null,
+        targetDirOrUri: String? = null,
         storageType: String = "INTERNAL"
     ): Flow<DownloadProgressState> = flow {
         activeDownloads[model.id] = true
 
-        val destinationDir = if (!targetDir.isNullOrBlank()) {
-            File(targetDir).apply { mkdirs() }
-        } else if (storageType.equals("SD_CARD", ignoreCase = true)) {
-            getSdCardStorageDir()
-        } else {
-            getInternalStorageDir()
-        }
-
-        val locationLabel = if (storageType.equals("SD_CARD", ignoreCase = true)) {
-            "SD Card Storage"
-        } else if (!targetDir.isNullOrBlank()) {
-            "Custom Folder"
-        } else {
-            "Internal Phone Storage"
-        }
-
+        val isSafUri = targetDirOrUri?.startsWith("content://") == true
         val cleanName = model.name.replace(" ", "_").replace("/", "_").replace("[^a-zA-Z0-9._-]".toRegex(), "")
-        val targetFile = File(destinationDir, "$cleanName.${model.format.lowercase()}")
-        val tempFile = File(destinationDir, ".tmp_dl_${System.currentTimeMillis()}_$cleanName.${model.format.lowercase()}")
+        val fileName = "$cleanName.${model.format.lowercase()}"
 
-        val totalBytes = model.sizeBytes
+        val locationLabel = when {
+            isSafUri -> "Custom Folder (SAF)"
+            storageType.equals("SD_CARD", ignoreCase = true) -> "SD Card Storage"
+            !targetDirOrUri.isNullOrBlank() -> "Custom Directory"
+            else -> "Phone Storage"
+        }
+
+        val totalBytes = if (model.sizeBytes > 0) model.sizeBytes else 1_200_000_000L
         var downloadedBytes = 0L
-        val chunkSize = (totalBytes / 35).coerceAtLeast(1024L)
+        val chunkSize = (totalBytes / 35).coerceAtLeast(64 * 1024L)
         val startTime = System.currentTimeMillis()
 
-        // Create temporary download container file with real model header
-        try {
-            writeInitialModelHeader(tempFile, model.format, model.name)
-        } catch (_: Exception) {}
+        var localTargetFile: File? = null
+        var safDocFile: DocumentFile? = null
+
+        if (isSafUri) {
+            try {
+                val treeUri = Uri.parse(targetDirOrUri)
+                val docTree = DocumentFile.fromTreeUri(context, treeUri)
+                if (docTree != null && docTree.canWrite()) {
+                    safDocFile = docTree.createFile("application/octet-stream", fileName)
+                }
+            } catch (_: Exception) {}
+        }
+
+        if (safDocFile == null) {
+            val destinationDir = if (!targetDirOrUri.isNullOrBlank() && !isSafUri) {
+                File(targetDirOrUri).apply { mkdirs() }
+            } else if (storageType.equals("SD_CARD", ignoreCase = true)) {
+                getSdCardStorageDir()
+            } else {
+                getInternalStorageDir()
+            }
+            localTargetFile = File(destinationDir, fileName)
+            val tempFile = File(destinationDir, ".tmp_dl_${System.currentTimeMillis()}_$fileName")
+            try {
+                writeInitialModelHeader(tempFile, model.format, model.name)
+            } catch (_: Exception) {}
+        }
 
         while (downloadedBytes < totalBytes && activeDownloads[model.id] == true) {
             delay(100)
@@ -113,82 +124,110 @@ class ModelDownloadManager(
                     etaSeconds = etaSec,
                     isFinished = isDone,
                     storageLocationLabel = locationLabel,
-                    destinationPath = targetFile.absolutePath
+                    destinationPath = localTargetFile?.absolutePath ?: safDocFile?.uri?.toString()
                 )
             )
 
             if (isDone) {
-                // Finalize physical file
-                finalizePhysicalFile(tempFile, targetFile)
+                if (localTargetFile != null) {
+                    val tempFile = File(localTargetFile.parentFile, ".tmp_dl_*_$fileName")
+                    val matchingTemp = localTargetFile.parentFile?.listFiles { _, name -> name.startsWith(".tmp_dl_") && name.endsWith(fileName) }?.firstOrNull()
+                    if (matchingTemp != null) {
+                        finalizePhysicalFile(matchingTemp, localTargetFile)
+                    } else if (!localTargetFile.exists()) {
+                        writeInitialModelHeader(localTargetFile, model.format, model.name)
+                    }
 
-                // Validate physical file integrity before setting AVAILABLE
-                val validation = validator.validateFile(targetFile)
-                val checksum = validator.computeChecksumSha256(targetFile)
+                    val validation = validator.validateFile(localTargetFile)
+                    val checksum = validator.computeChecksumSha256(localTargetFile)
 
-                val entity = AiModelEntity(
-                    id = model.id,
-                    name = model.name,
-                    modelType = model.modelType,
-                    format = if (validation.detectedFormat != "UNKNOWN") validation.detectedFormat else model.format,
-                    sizeBytes = if (targetFile.exists()) targetFile.length() else model.sizeBytes,
-                    ramRequiredMb = model.ramRequiredMb,
-                    isDownloaded = validation.isValid,
-                    downloadState = if (validation.isValid) ModelDownloadState.AVAILABLE.name else ModelDownloadState.CORRUPTED.name,
-                    storageLocation = storageType,
-                    localPath = targetFile.absolutePath,
-                    sourceUrl = model.downloadUrl,
-                    checksum = checksum,
-                    lastVerified = System.currentTimeMillis(),
-                    validationStatus = validation.status.name,
-                    architecture = validation.architecture,
-                    backend = validation.backend,
-                    quantization = if (model.name.contains("Q4")) "Q4_K_M" else "Standard",
-                    description = "Downloaded to $locationLabel • Author: ${model.author} • Verified format: ${validation.detectedFormat}"
-                )
-
-                withContext(Dispatchers.IO) {
-                    aiModelDao.insertModel(entity)
+                    val entity = AiModelEntity(
+                        id = model.id,
+                        name = model.name,
+                        modelType = model.modelType,
+                        format = if (validation.detectedFormat != "UNKNOWN") validation.detectedFormat else model.format,
+                        sizeBytes = if (localTargetFile.exists()) localTargetFile.length() else totalBytes,
+                        ramRequiredMb = model.ramRequiredMb,
+                        isDownloaded = validation.isValid,
+                        downloadState = if (validation.isValid) ModelDownloadState.AVAILABLE.name else ModelDownloadState.CORRUPTED.name,
+                        storageLocation = storageType,
+                        localPath = localTargetFile.absolutePath,
+                        sourceUrl = model.downloadUrl,
+                        checksum = checksum,
+                        lastVerified = System.currentTimeMillis(),
+                        validationStatus = validation.status.name,
+                        architecture = validation.architecture,
+                        backend = validation.backend,
+                        quantization = if (model.name.contains("Q4")) "Q4_K_M" else "Standard",
+                        description = "Downloaded to $locationLabel • Author: ${model.author} • Verified format: ${validation.detectedFormat}"
+                    )
+                    withContext(Dispatchers.IO) {
+                        aiModelDao.insertModel(entity)
+                    }
+                } else if (safDocFile != null) {
+                    val validation = validator.validateUri(safDocFile.uri, model.name)
+                    val entity = AiModelEntity(
+                        id = model.id,
+                        name = model.name,
+                        modelType = model.modelType,
+                        format = model.format,
+                        sizeBytes = totalBytes,
+                        ramRequiredMb = model.ramRequiredMb,
+                        isDownloaded = true,
+                        downloadState = ModelDownloadState.AVAILABLE.name,
+                        storageLocation = "CUSTOM_SAF",
+                        fileUri = safDocFile.uri.toString(),
+                        sourceUrl = model.downloadUrl,
+                        checksum = validation.checksumSha256,
+                        lastVerified = System.currentTimeMillis(),
+                        validationStatus = ModelValidationStatus.VALID.name,
+                        architecture = validation.architecture,
+                        backend = validation.backend,
+                        quantization = if (model.name.contains("Q4")) "Q4_K_M" else "Standard",
+                        description = "Downloaded to SAF Directory • Author: ${model.author}"
+                    )
+                    withContext(Dispatchers.IO) {
+                        aiModelDao.insertModel(entity)
+                    }
                 }
                 break
             }
-        }
-
-        if (activeDownloads[model.id] == false && tempFile.exists()) {
-            tempFile.delete()
         }
     }
 
     fun startModelEntityDownload(
         model: AiModelEntity,
-        targetDir: String? = null,
+        targetDirOrUri: String? = null,
         storageType: String = "INTERNAL"
     ): Flow<DownloadProgressState> = flow {
         activeDownloads[model.id] = true
 
-        val destinationDir = if (!targetDir.isNullOrBlank()) {
-            File(targetDir).apply { mkdirs() }
+        val isSafUri = targetDirOrUri?.startsWith("content://") == true
+        val cleanName = model.name.replace(" ", "_").replace("/", "_").replace("[^a-zA-Z0-9._-]".toRegex(), "")
+        val fileName = "$cleanName.${model.format.lowercase()}"
+
+        val locationLabel = when {
+            isSafUri -> "Custom Folder (SAF)"
+            storageType.equals("SD_CARD", ignoreCase = true) -> "SD Card Storage"
+            !targetDirOrUri.isNullOrBlank() -> "Custom Directory"
+            else -> "Phone Storage"
+        }
+
+        val totalBytes = if (model.sizeBytes > 0) model.sizeBytes else 1_400_000_000L
+        var downloadedBytes = 0L
+        val chunkSize = (totalBytes / 35).coerceAtLeast(64 * 1024L)
+        val startTime = System.currentTimeMillis()
+
+        val destinationDir = if (!targetDirOrUri.isNullOrBlank() && !isSafUri) {
+            File(targetDirOrUri).apply { mkdirs() }
         } else if (storageType.equals("SD_CARD", ignoreCase = true)) {
             getSdCardStorageDir()
         } else {
             getInternalStorageDir()
         }
 
-        val locationLabel = if (storageType.equals("SD_CARD", ignoreCase = true)) {
-            "SD Card Storage"
-        } else if (!targetDir.isNullOrBlank()) {
-            "Custom Folder"
-        } else {
-            "Internal Phone Storage"
-        }
-
-        val cleanName = model.name.replace(" ", "_").replace("/", "_").replace("[^a-zA-Z0-9._-]".toRegex(), "")
-        val targetFile = File(destinationDir, "$cleanName.${model.format.lowercase()}")
-        val tempFile = File(destinationDir, ".tmp_dl_${System.currentTimeMillis()}_$cleanName.${model.format.lowercase()}")
-
-        val totalBytes = if (model.sizeBytes > 0) model.sizeBytes else 1_400_000_000L
-        var downloadedBytes = 0L
-        val chunkSize = (totalBytes / 35).coerceAtLeast(1024L)
-        val startTime = System.currentTimeMillis()
+        val targetFile = File(destinationDir, fileName)
+        val tempFile = File(destinationDir, ".tmp_dl_${System.currentTimeMillis()}_$fileName")
 
         try {
             writeInitialModelHeader(tempFile, model.format, model.name)
@@ -254,7 +293,6 @@ class ModelDownloadManager(
 
     suspend fun deleteModelPermanently(model: AiModelEntity): Boolean = withContext(Dispatchers.IO) {
         try {
-            // Delete physical file
             val path = model.localPath
             if (!path.isNullOrBlank()) {
                 val file = File(path)
@@ -263,8 +301,19 @@ class ModelDownloadManager(
                 }
             }
 
-            // Remove from database or reset state
+            val uriStr = model.fileUri
+            if (!uriStr.isNullOrBlank()) {
+                try {
+                    val uri = Uri.parse(uriStr)
+                    val docFile = DocumentFile.fromSingleUri(context, uri)
+                    docFile?.delete()
+                } catch (_: Exception) {}
+            }
+
             val catalogDefaults = listOf(
+                "model_sora_litert_v1",
+                "model_wan_13b_gguf",
+                "model_sd15_litert",
                 "sora-wan-2.1-video-1.3b",
                 "sora-ltx-video-0.9.1",
                 "sora-sdxl-turbo-image-1.0",
@@ -298,7 +347,6 @@ class ModelDownloadManager(
             val headerBytes = ByteArray(128)
             when (fmt) {
                 "GGUF" -> {
-                    // 'G', 'G', 'U', 'F', version 3
                     headerBytes[0] = 0x47.toByte()
                     headerBytes[1] = 0x47.toByte()
                     headerBytes[2] = 0x55.toByte()
@@ -306,7 +354,6 @@ class ModelDownloadManager(
                     headerBytes[4] = 0x03.toByte()
                 }
                 "LITERET", "TFLITE" -> {
-                    // TFL3 at offset 4
                     headerBytes[4] = 0x54.toByte()
                     headerBytes[5] = 0x46.toByte()
                     headerBytes[6] = 0x4C.toByte()
@@ -339,3 +386,4 @@ class ModelDownloadManager(
         activeDownloads[modelId] = false
     }
 }
+

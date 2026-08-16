@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.ui.SoraMainViewModel
 import com.example.ui.SoraTab
+import com.example.ui.components.SoraBadge
 import com.example.ui.components.SoraGlassCard
 import com.example.ui.components.SoraSectionHeader
 import com.example.ui.theme.*
@@ -77,10 +78,30 @@ fun SettingsScreen(viewModel: SoraMainViewModel) {
     val telegramBotToken by viewModel.telegramBotToken.collectAsState()
     val isTelegramBotEnabled by viewModel.isTelegramBotEnabled.collectAsState()
 
+    val storageVolumes by viewModel.storageVolumes.collectAsState()
+    val preferredStorage by viewModel.preferredStorage.collectAsState()
+    val customSafTreeUri by viewModel.customSafTreeUri.collectAsState()
+    val isMigratingStorage by viewModel.isMigratingStorage.collectAsState()
+    val migrationProgress by viewModel.migrationProgress.collectAsState()
+    val settingsStatusMessage by viewModel.settingsStatusMessage.collectAsState()
+
     var showApiKey by remember { mutableStateOf(false) }
     var showLogsDialog by remember { mutableStateOf(false) }
     var showTaskHistoryDialog by remember { mutableStateOf(false) }
     var editableSystemPrompt by remember(customSystemPrompt) { mutableStateOf(customSystemPrompt) }
+
+    val safFolderPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        uri?.let {
+            try {
+                val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                context.contentResolver.takePersistableUriPermission(it, takeFlags)
+            } catch (_: Exception) {}
+            viewModel.setPreferredStorage("CUSTOM", it.toString())
+            Toast.makeText(context, "Storage folder updated via SAF!", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     // Runtime Permission checking states
     var hasMicPermission by remember {
@@ -392,6 +413,187 @@ fun SettingsScreen(viewModel: SoraMainViewModel) {
                                 Text("Recommended: Q4_K_M (recommended) · Q4_0_4_8 on X Elite", fontSize = 11.sp, color = TextSecondary)
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // REAL DEVICE STORAGE & MODEL DIRECTORY (SAF)
+        // ==========================================
+        item {
+            SoraGlassCard(borderColor = NeonCyan) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(imageVector = Icons.Default.SdCard, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text("DEVICE STORAGE & SAF", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                Text("Real hardware storage volumes and SAF directory", fontSize = 11.sp, color = TextSecondary)
+                            }
+                        }
+                        IconButton(onClick = { viewModel.refreshStorageVolumes() }) {
+                            Icon(imageVector = Icons.Default.Refresh, contentDescription = "Refresh Storage", tint = NeonCyan)
+                        }
+                    }
+
+                    // Storage Volumes List
+                    Text(
+                        text = "DETECTED STORAGE SPACES",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextSecondary,
+                        letterSpacing = 1.sp
+                    )
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(GlassSurface)
+                            .border(1.dp, CardBorder, RoundedCornerShape(10.dp))
+                    ) {
+                        storageVolumes.forEachIndexed { index, volume ->
+                            val isSelected = preferredStorage == volume.storageType
+                            val icon = if (volume.isRemovable) Icons.Default.SdStorage else Icons.Default.PhoneAndroid
+                            val color = if (volume.isRemovable) AccentGreen else NeonCyan
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { viewModel.setPreferredStorage(volume.storageType) }
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(color.copy(alpha = 0.15f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(imageVector = icon, contentDescription = null, tint = color, modifier = Modifier.size(18.dp))
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(text = volume.name, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                            if (volume.isEmulated) {
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                SoraBadge(text = "App Private", color = NeonCyan)
+                                            }
+                                        }
+                                        Text(
+                                            text = "${String.format("%.1f", volume.freeSpaceGb)} GB Free of ${String.format("%.1f", volume.totalSpaceGb)} GB",
+                                            fontSize = 11.sp,
+                                            color = TextSecondary
+                                        )
+                                    }
+                                }
+                                if (isSelected) {
+                                    Icon(imageVector = Icons.Default.CheckCircle, contentDescription = "Active", tint = NeonCyan)
+                                }
+                            }
+                            if (index < storageVolumes.size - 1) {
+                                HorizontalDivider(color = CardBorder.copy(alpha = 0.5f), thickness = 0.5.dp)
+                            }
+                        }
+                    }
+
+                    // Custom SAF Directory Tree Option
+                    Card(
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(containerColor = GlassSurface),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, if (preferredStorage == "CUSTOM") NeonPurple else CardBorder)
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(imageVector = Icons.Default.FolderOpen, contentDescription = null, tint = NeonPurple, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Custom SAF Model Directory", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                }
+                                Button(
+                                    onClick = { safFolderPicker.launch(null) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = NeonPurple),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Text("Select SAF Tree", fontSize = 11.sp)
+                                }
+                            }
+                            if (!customSafTreeUri.isNullOrBlank()) {
+                                Text(
+                                    text = "SAF Tree URI: $customSafTreeUri",
+                                    fontSize = 10.sp,
+                                    color = AccentGreen,
+                                    maxLines = 2
+                                )
+                            }
+                        }
+                    }
+
+                    // Action Buttons: Reconcile Physical Storage & Migrate
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.scanStorageForModels()
+                                Toast.makeText(context, "Scanning physical storage...", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, NeonCyan)
+                        ) {
+                            Icon(imageVector = Icons.Default.Search, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Reconcile Storage", fontSize = 11.sp, color = NeonCyan)
+                        }
+
+                        Button(
+                            onClick = {
+                                val target = if (preferredStorage == "INTERNAL") "SD_CARD" else "INTERNAL"
+                                viewModel.migrateModelsToNewStorage(target)
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonPurple),
+                            enabled = !isMigratingStorage
+                        ) {
+                            if (isMigratingStorage) {
+                                CircularProgressIndicator(modifier = Modifier.size(14.dp), color = DeepDarkBg, strokeWidth = 2.dp)
+                            } else {
+                                Icon(imageVector = Icons.Default.DriveFileMove, contentDescription = null, tint = DeepDarkBg, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Migrate Models", fontSize = 11.sp, color = DeepDarkBg, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    // Migration Progress & Status
+                    if (isMigratingStorage) {
+                        LinearProgressIndicator(
+                            progress = { migrationProgress },
+                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                            color = NeonPurple,
+                            trackColor = GlassSurfaceVariant
+                        )
+                    }
+
+                    if (!settingsStatusMessage.isNullOrBlank()) {
+                        Text(text = settingsStatusMessage ?: "", fontSize = 11.sp, color = AccentGreen)
                     }
                 }
             }

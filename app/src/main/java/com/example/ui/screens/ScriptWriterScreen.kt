@@ -43,7 +43,7 @@ fun ScriptWriterScreen(
     val statusMessage by scriptEngine.statusMessage.collectAsState()
     val activeModel by viewModel.activeLoadedModel.collectAsState()
     val unifiedJobs by viewModel.unifiedJobs.collectAsState()
-    val activeScriptJob = unifiedJobs.values.firstOrNull { it.type == com.example.ai.jobs.AIJobType.SCRIPT_GENERATION && it.status == AIJobStatus.RUNNING }
+    val activeScriptJob = unifiedJobs.firstOrNull { it.type == com.example.ai.jobs.AIJobType.SCRIPT_GENERATION && it.status == AIJobStatus.RUNNING }
 
     val coroutineScope = rememberCoroutineScope()
     var activeTab by remember { mutableStateOf(0) } // 0: AV Production Matrix, 1: Idea & Parameters, 2: Audio & Visual Export

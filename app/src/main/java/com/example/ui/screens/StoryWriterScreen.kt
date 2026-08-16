@@ -46,7 +46,7 @@ fun StoryWriterScreen(
     val statusMessage by storyEngine.statusMessage.collectAsState()
     val activeModel by viewModel.activeLoadedModel.collectAsState()
     val unifiedJobs by viewModel.unifiedJobs.collectAsState()
-    val activeStoryJob = unifiedJobs.values.firstOrNull { it.type == com.example.ai.jobs.AIJobType.STORY_GENERATION && it.status == AIJobStatus.RUNNING }
+    val activeStoryJob = unifiedJobs.firstOrNull { it.type == com.example.ai.jobs.AIJobType.STORY_GENERATION && it.status == AIJobStatus.RUNNING }
 
     val coroutineScope = rememberCoroutineScope()
     var showCharacterDialog by remember { mutableStateOf(false) }
@@ -794,7 +794,7 @@ fun StoryEditModalSheet(
             Text("Select Operation:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
 
             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                items(StoryEditOperation.values()) { op ->
+                items(StoryEditOperation.entries) { op ->
                     FilterChip(
                         selected = op == selectedOp,
                         onClick = { selectedOp = op },

@@ -5,6 +5,7 @@ import com.example.ai.hardware.HardwareDetector
 import com.example.ai.inference.model.ModelCapability
 import com.example.ai.inference.model.ModelCapabilityDetector
 import com.example.ai.inference.model.ModelCompatibilityResult
+import com.example.ai.models.ModelRegistry
 import com.example.data.AiModelEntity
 import com.example.data.SoraCloudServerEntity
 import kotlinx.coroutines.Dispatchers
@@ -54,9 +55,15 @@ class AIInferenceManager(
     val inferenceEngineManager: InferenceEngineManager
 ) {
     val hardwareDetector = HardwareDetector(context)
+    val modelRegistry = ModelRegistry.getInstance(context)
 
     /**
-     * Inspects active or target model for compatibility before executing inference.
+     * Checks hardware compatibility for a specific model before loading or executing.
+     */
+    fun checkHardwareCompatibility(model: AiModelEntity) = modelRegistry.checkHardwareCompatibility(model)
+
+    /**
+     * Inspects active or target model for capability compatibility before executing inference.
      */
     fun validateCapability(
         model: AiModelEntity?,
@@ -65,6 +72,7 @@ class AIInferenceManager(
     ): ModelCompatibilityResult {
         return ModelCapabilityDetector.checkCompatibility(model, requiredCapability, availableModels)
     }
+
 
     /**
      * Executes real text generation with model capability validation.

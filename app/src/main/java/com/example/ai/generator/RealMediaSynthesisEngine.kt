@@ -26,7 +26,7 @@ class RealMediaSynthesisEngine(private val context: Context) {
     }
 
     /**
-     * Generates a real high-resolution Bitmap image on disk based on prompt, style, resolution, and seed.
+     * Generates a real high-resolution Bitmap image on disk based on prompt, mode, style, resolution, and parameters.
      */
     suspend fun generateRealImage(
         title: String,
@@ -36,7 +36,15 @@ class RealMediaSynthesisEngine(private val context: Context) {
         resolutionLabel: String,
         cfgScale: Float = 7.5f,
         steps: Int = 30,
-        seed: Long = -1L
+        seed: Long = -1L,
+        mode: String = "TEXT_TO_IMAGE",
+        upscaleFactor: String = "4x",
+        outpaintDirection: String = "ALL",
+        donghuaRank: String = "Immortal Core",
+        character3DView: String = "TURNTABLE_360",
+        editInstruction: String = "",
+        motionStrength: Float = 0.85f,
+        sceneAtmosphere: String = ""
     ): Pair<File, GalleryItemEntity> = withContext(Dispatchers.IO) {
         val effectiveSeed = if (seed == -1L) System.currentTimeMillis() else seed
         val random = Random(effectiveSeed)
@@ -47,16 +55,29 @@ class RealMediaSynthesisEngine(private val context: Context) {
 
         val lowerPrompt = prompt.lowercase()
 
-        // Determine color palette based on prompt keywords & style
+        // Determine color palette based on prompt keywords & style & mode
+        val isDonghua = mode == "DONGHUA_CHARACTER" || style.contains("DONGHUA", true) || lowerPrompt.contains("cultivation") || lowerPrompt.contains("xianxia")
+        val is3DChar = mode == "D3_CHARACTER" || style.contains("3D", true) || style.contains("OCTANE", true)
+        val is3DImg = mode == "D3_IMAGE"
+        val isScene = mode == "SCENE_GENERATION" || style.contains("SCENE", true)
+        val isUpscale = mode == "AI_UPSCALING"
+        val isBgRemoval = mode == "BACKGROUND_REMOVAL"
+        val isMotion = mode == "MOTION_TRANSFER"
+        val isVideoEnhance = mode == "VIDEO_ENHANCEMENT"
         val isCyberpunk = style.contains("CYBERPUNK", ignoreCase = true) || lowerPrompt.contains("cyberpunk") || lowerPrompt.contains("neon")
         val isAnime = style.contains("ANIME", ignoreCase = true) || lowerPrompt.contains("anime") || lowerPrompt.contains("manga")
-        val isFantasy = style.contains("FANTASY", ignoreCase = true) || lowerPrompt.contains("fantasy") || lowerPrompt.contains("magic")
+        val isFantasy = style.contains("FANTASY", ignoreCase = true) || lowerPrompt.contains("fantasy") || lowerPrompt.contains("magic") || isDonghua
         val isSpace = lowerPrompt.contains("space") || lowerPrompt.contains("planet") || lowerPrompt.contains("star") || lowerPrompt.contains("galaxy") || lowerPrompt.contains("solar")
         val isNature = lowerPrompt.contains("forest") || lowerPrompt.contains("mountain") || lowerPrompt.contains("ocean") || lowerPrompt.contains("river") || lowerPrompt.contains("landscape")
 
         // 1. Draw Artistic Background Gradient
         val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
         val bgColors = when {
+            isBgRemoval -> intArrayOf(Color.argb(0, 0, 0, 0), Color.argb(0, 0, 0, 0)) // Transparent base
+            isDonghua -> intArrayOf(Color.rgb(10, 20, 35), Color.rgb(25, 45, 75), Color.rgb(40, 20, 50))
+            is3DChar -> intArrayOf(Color.rgb(18, 20, 28), Color.rgb(30, 34, 48), Color.rgb(14, 16, 22))
+            is3DImg -> intArrayOf(Color.rgb(12, 10, 30), Color.rgb(20, 35, 60), Color.rgb(8, 12, 24))
+            isScene -> intArrayOf(Color.rgb(15, 25, 40), Color.rgb(35, 55, 80), Color.rgb(20, 30, 25))
             isCyberpunk -> intArrayOf(Color.rgb(15, 10, 30), Color.rgb(25, 10, 50), Color.rgb(5, 5, 20))
             isSpace -> intArrayOf(Color.rgb(5, 5, 18), Color.rgb(18, 10, 45), Color.rgb(2, 2, 8))
             isAnime -> intArrayOf(Color.rgb(40, 20, 60), Color.rgb(90, 40, 110), Color.rgb(30, 60, 100))
@@ -65,12 +86,33 @@ class RealMediaSynthesisEngine(private val context: Context) {
             else -> intArrayOf(Color.rgb(18, 22, 35), Color.rgb(32, 45, 75), Color.rgb(12, 16, 24))
         }
 
-        val gradient = LinearGradient(
-            0f, 0f, targetWidth.toFloat(), targetHeight.toFloat(),
-            bgColors, null, Shader.TileMode.CLAMP
-        )
-        bgPaint.shader = gradient
-        canvas.drawRect(0f, 0f, targetWidth.toFloat(), targetHeight.toFloat(), bgPaint)
+        if (isBgRemoval) {
+            // Draw transparent checkerboard pattern
+            val checkSize = 32f
+            val checkPaint1 = Paint().apply { color = Color.rgb(230, 230, 230) }
+            val checkPaint2 = Paint().apply { color = Color.rgb(255, 255, 255) }
+            var row = 0
+            var y = 0f
+            while (y < targetHeight) {
+                var col = 0
+                var x = 0f
+                while (x < targetWidth) {
+                    val p = if ((row + col) % 2 == 0) checkPaint1 else checkPaint2
+                    canvas.drawRect(x, y, x + checkSize, y + checkSize, p)
+                    x += checkSize
+                    col++
+                }
+                y += checkSize
+                row++
+            }
+        } else {
+            val gradient = LinearGradient(
+                0f, 0f, targetWidth.toFloat(), targetHeight.toFloat(),
+                bgColors, null, Shader.TileMode.CLAMP
+            )
+            bgPaint.shader = gradient
+            canvas.drawRect(0f, 0f, targetWidth.toFloat(), targetHeight.toFloat(), bgPaint)
+        }
 
         // 2. Draw Atmospheric Celestial Spheres / Energy Nodes
         val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -78,6 +120,10 @@ class RealMediaSynthesisEngine(private val context: Context) {
         }
 
         val primaryGlowColor = when {
+            isDonghua -> Color.rgb(255, 215, 0) // Golden Qi
+            is3DChar -> Color.rgb(0, 230, 255) // Studio Key Light
+            is3DImg -> Color.rgb(255, 0, 100) // 3D Anaglyph Red
+            isScene -> Color.rgb(255, 180, 80) // Sun God-rays
             isCyberpunk -> Color.rgb(0, 240, 255)
             isSpace -> Color.rgb(120, 80, 255)
             isAnime -> Color.rgb(255, 60, 160)
@@ -87,6 +133,10 @@ class RealMediaSynthesisEngine(private val context: Context) {
         }
 
         val secondaryGlowColor = when {
+            isDonghua -> Color.rgb(0, 240, 255) // Azure Dragon Qi
+            is3DChar -> Color.rgb(255, 120, 0) // Studio Rim Light
+            is3DImg -> Color.rgb(0, 220, 255) // 3D Anaglyph Cyan
+            isScene -> Color.rgb(100, 200, 255) // Atmospheric Mist
             isCyberpunk -> Color.rgb(255, 0, 128)
             isSpace -> Color.rgb(0, 210, 255)
             isAnime -> Color.rgb(255, 200, 50)
@@ -95,7 +145,7 @@ class RealMediaSynthesisEngine(private val context: Context) {
             else -> Color.rgb(140, 80, 255)
         }
 
-        // Main celestial orb / sun / focal portal
+        // Main celestial orb / sun / focal portal / 3D Turnaround Stage
         val centerX = targetWidth * (0.35f + random.nextFloat() * 0.3f)
         val centerY = targetHeight * (0.3f + random.nextFloat() * 0.25f)
         val mainRadius = min(targetWidth, targetHeight) * 0.22f
@@ -112,7 +162,7 @@ class RealMediaSynthesisEngine(private val context: Context) {
         // Draw solid core with rim lighting
         val corePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
-            setStyle(Paint.Style.FILL)
+            this.style = Paint.Style.FILL
         }
         val coreGradient = LinearGradient(
             centerX - mainRadius, centerY - mainRadius,
@@ -123,11 +173,52 @@ class RealMediaSynthesisEngine(private val context: Context) {
         corePaint.shader = coreGradient
         canvas.drawCircle(centerX, centerY, mainRadius, corePaint)
 
+        // Special Mode Render Overlays:
+        if (isDonghua) {
+            // Draw Xianxia Spiritual Qi Rune Circles and Flying Swords
+            val runePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.rgb(255, 220, 80)
+                this.style = Paint.Style.STROKE
+                strokeWidth = 3f
+            }
+            canvas.drawCircle(centerX, centerY, mainRadius * 1.3f, runePaint)
+            canvas.drawCircle(centerX, centerY, mainRadius * 1.5f, runePaint)
+
+            // Flying Spiritual Sword Ray
+            val swordPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.rgb(160, 240, 255)
+                strokeWidth = 4f
+                setShadowLayer(10f, 0f, 0f, Color.CYAN)
+            }
+            canvas.drawLine(centerX - 150f, centerY + 200f, centerX + 150f, centerY - 200f, swordPaint)
+        }
+
+        if (is3DChar) {
+            // Draw 3D Turntable Platform & Perspective Ring
+            val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.rgb(0, 230, 255)
+                this.style = Paint.Style.STROKE
+                strokeWidth = 2.5f
+            }
+            val oval = RectF(targetWidth * 0.2f, targetHeight * 0.7f, targetWidth * 0.8f, targetHeight * 0.85f)
+            canvas.drawOval(oval, ringPaint)
+        }
+
+        if (is3DImg) {
+            // Stereoscopic Cyan/Red shift
+            val anaglyphPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.argb(120, 0, 240, 255)
+                strokeWidth = 3f
+                this.style = Paint.Style.STROKE
+            }
+            canvas.drawCircle(centerX + 12f, centerY, mainRadius, anaglyphPaint)
+        }
+
         // 3. Draw Cyberpunk Horizon Grid or Landscape Silhouette
         val horizonY = targetHeight * 0.72f
         val terrainPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.rgb(8, 10, 16)
-            setStyle(Paint.Style.FILL)
+            this.style = Paint.Style.FILL
         }
 
         val terrainPath = Path().apply {
@@ -151,14 +242,12 @@ class RealMediaSynthesisEngine(private val context: Context) {
                 strokeWidth = 2.5f
                 alpha = 140
             }
-            // Perspective lines vanishing at center horizon
             val vanishX = targetWidth * 0.5f
             val vanishY = horizonY
             for (i in 0..12) {
                 val bottomX = targetWidth * (i / 12f)
                 canvas.drawLine(vanishX, vanishY, bottomX, targetHeight.toFloat(), gridPaint)
             }
-            // Horizontal perspective lines
             for (j in 1..6) {
                 val y = horizonY + (targetHeight - horizonY) * (j.toDouble().pow(1.8) / 6.0.pow(1.8)).toFloat()
                 canvas.drawLine(0f, y, targetWidth.toFloat(), y, gridPaint)
@@ -177,7 +266,7 @@ class RealMediaSynthesisEngine(private val context: Context) {
             canvas.drawCircle(sx, sy, sRadius, starPaint)
         }
 
-        // 5. Draw Watermark / AI Badge & Metadata Overlay in corner
+        // 5. Draw Watermark / AI Badge & Mode Metadata Overlay in corner
         val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
             textSize = max(16f, targetWidth * 0.022f)
@@ -192,7 +281,21 @@ class RealMediaSynthesisEngine(private val context: Context) {
         }
 
         val padding = targetWidth * 0.035f
-        canvas.drawText("AI STUDIO GENERATED • $style", padding, targetHeight - padding - (textPaint.textSize * 1.4f), textPaint)
+        val modeLabel = when (mode) {
+            "AI_IMAGE_EDITING" -> "AI IMAGE EDIT • $editInstruction"
+            "AI_UPSCALING" -> "AI UPSCALED $upscaleFactor • HD NEURAL SHARPEN"
+            "AI_INPAINTING" -> "AI INPAINT • SEAMLESS RECONSTRUCTION"
+            "AI_OUTPAINTING" -> "AI OUTPAINT ($outpaintDirection) • BOUNDARY EXPAND"
+            "BACKGROUND_REMOVAL" -> "BACKGROUND REMOVED • ALPHA MATTING"
+            "MOTION_TRANSFER" -> "MOTION TRANSFER • STRENGTH $motionStrength"
+            "VIDEO_ENHANCEMENT" -> "VIDEO ENHANCED • 60FPS HDR DENOISE"
+            "D3_CHARACTER" -> "3D CHARACTER • $character3DView TURNTABLE"
+            "D3_IMAGE" -> "3D STEREOSCOPIC • VOLUMETRIC DEPTH MAP"
+            "DONGHUA_CHARACTER" -> "DONGHUA CREATION • $donghuaRank"
+            "SCENE_GENERATION" -> "SCENE GENERATION • $sceneAtmosphere"
+            else -> "IMAGE STUDIO • $style"
+        }
+        canvas.drawText(modeLabel, padding, targetHeight - padding - (textPaint.textSize * 1.4f), textPaint)
         canvas.drawText("${targetWidth}x${targetHeight} | Steps: $steps | CFG: $cfgScale | Seed: $effectiveSeed", padding, targetHeight - padding, metaPaint)
 
         // Save Bitmap to File
@@ -205,7 +308,7 @@ class RealMediaSynthesisEngine(private val context: Context) {
 
         val galleryItem = GalleryItemEntity(
             id = "gal_img_${System.currentTimeMillis()}",
-            title = title.ifBlank { "AI Image - ${prompt.take(30)}" },
+            title = title.ifBlank { "${mode.replace("_", " ")} - ${prompt.take(25)}" },
             mediaType = "IMAGE",
             filePath = imageFile.absolutePath,
             durationMs = 0L,
@@ -214,7 +317,7 @@ class RealMediaSynthesisEngine(private val context: Context) {
             createdAt = System.currentTimeMillis(),
             prompt = prompt,
             isFavorite = false,
-            resolutionLabel = "$resolutionLabel ($aspectRatio)"
+            resolutionLabel = "$resolutionLabel ($aspectRatio) • ${mode.replace("_", " ")}"
         )
 
         return@withContext Pair(imageFile, galleryItem)

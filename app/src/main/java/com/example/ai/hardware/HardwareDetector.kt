@@ -34,7 +34,30 @@ enum class PerformanceTier {
     HIGH_END_12GB_PLUS // 12+ GB RAM: Supports Flux, Hunyuan Video, CogVideoX, GGUF 8B
 }
 
+enum class HardwareLoadLevel(val label: String, val colorHex: Long) {
+    SAFE("SAFE", 0xFF00E676),
+    WARNING("WARNING", 0xFFFFD600),
+    HIGH_LOAD("HIGH LOAD", 0xFFFF9100),
+    UNSUPPORTED("UNSUPPORTED", 0xFFFF1744)
+}
+
+data class HardwareTaskAssessment(
+    val level: HardwareLoadLevel,
+    val estimatedRamMb: Int,
+    val availableRamMb: Int,
+    val estimatedGpuPercent: Int,
+    val estimatedCpuPercent: Int,
+    val estimatedStorageMb: Long,
+    val availableStorageMb: Long,
+    val estimatedDurationSeconds: Int,
+    val estimatedOutputSizeBytes: Long,
+    val recommendationMessage: String,
+    val lowRamOptimizationsAvailable: Boolean = false,
+    val canProceedWithConfirmation: Boolean = true
+)
+
 class HardwareDetector(private val context: Context) {
+
 
     fun getDeviceProfile(): DeviceHardwareProfile {
         val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
@@ -115,6 +138,76 @@ class HardwareDetector(private val context: Context) {
             thermalStatus = thermal,
             maxRecommendedModelRamMb = maxModelRamMb,
             performanceTier = tier
+        )
+    }
+
+    fun assessTaskLoad(
+        modelRamMb: Int,
+        taskType: String,
+        resolution: String = "1080p",
+        durationSec: Int = 5,
+        batchCount: Int = 1
+    ): HardwareTaskAssessment {
+        val profile = getDeviceProfile()
+        val availRamMb = (profile.availableRamGb * 1024).toInt()
+        val availStorageMb = (profile.internalStorageFreeGb * 1024).toLong()
+
+        val extraTaskRam = when (taskType) {
+            "VIDEO", "VIDEO_SYNTHESIS", "TEXT_TO_VIDEO", "IMAGE_TO_VIDEO" -> (durationSec * 60) + if (resolution.contains("4k") || resolution.contains("2048")) 1200 else 400
+            "IMAGE", "IMAGE_SYNTHESIS", "TEXT_TO_IMAGE" -> (batchCount * 250) + if (resolution.contains("2048") || resolution.contains("4x") || resolution.contains("8x")) 800 else 200
+            "MANHWA", "MANHWA_ANIMATION" -> 350
+            "VOICE", "VOICE_SYNTHESIS" -> 150
+            else -> 200
+        }
+
+        val totalEstimatedRam = modelRamMb + extraTaskRam
+        val estimatedGpu = when (taskType) {
+            "VIDEO", "VIDEO_SYNTHESIS" -> if (profile.gpuVulkanSupported) 85 else 40
+            "IMAGE", "IMAGE_SYNTHESIS" -> if (profile.gpuVulkanSupported) 75 else 30
+            else -> 45
+        }
+        val estimatedCpu = if (profile.gpuVulkanSupported) 45 else 80
+        val estimatedDuration = when (taskType) {
+            "VIDEO", "VIDEO_SYNTHESIS" -> (durationSec * 3).coerceAtLeast(6)
+            "IMAGE", "IMAGE_SYNTHESIS" -> (batchCount * 4).coerceAtLeast(3)
+            "MANHWA" -> 5
+            "VOICE" -> 2
+            else -> 4
+        }
+        val outputSizeBytes = when (taskType) {
+            "VIDEO", "VIDEO_SYNTHESIS" -> (durationSec * 3_500_000L)
+            "IMAGE", "IMAGE_SYNTHESIS" -> (batchCount * 1_800_000L)
+            "VOICE" -> (durationSec * 160_000L)
+            else -> 2_000_000L
+        }
+
+        val level = when {
+            totalEstimatedRam > (profile.totalRamGb * 1024 * 0.9f) -> HardwareLoadLevel.UNSUPPORTED
+            totalEstimatedRam > availRamMb -> HardwareLoadLevel.WARNING
+            totalEstimatedRam > (availRamMb * 0.75f) -> HardwareLoadLevel.HIGH_LOAD
+            else -> HardwareLoadLevel.SAFE
+        }
+
+        val recommendation = when (level) {
+            HardwareLoadLevel.SAFE -> "Device memory and compute are optimal for real-time synthesis."
+            HardwareLoadLevel.HIGH_LOAD -> "Task is intensive. Background rendering is active to maintain responsiveness."
+            HardwareLoadLevel.WARNING -> "Estimated RAM ($totalEstimatedRam MB) exceeds available memory ($availRamMb MB free). Use Low-RAM mode or confirm to proceed."
+            HardwareLoadLevel.UNSUPPORTED -> "Estimated RAM ($totalEstimatedRam MB) exceeds physical hardware limits (${(profile.totalRamGb * 1024).toInt()} MB total). Consider smaller models or cloud delegation."
+        }
+
+        return HardwareTaskAssessment(
+            level = level,
+            estimatedRamMb = totalEstimatedRam,
+            availableRamMb = availRamMb,
+            estimatedGpuPercent = estimatedGpu,
+            estimatedCpuPercent = estimatedCpu,
+            estimatedStorageMb = outputSizeBytes / (1024 * 1024),
+            availableStorageMb = availStorageMb,
+            estimatedDurationSeconds = estimatedDuration,
+            estimatedOutputSizeBytes = outputSizeBytes,
+            recommendationMessage = recommendation,
+            lowRamOptimizationsAvailable = totalEstimatedRam > (availRamMb * 0.7f),
+            canProceedWithConfirmation = level != HardwareLoadLevel.UNSUPPORTED
         )
     }
 

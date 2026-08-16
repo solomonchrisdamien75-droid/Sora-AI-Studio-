@@ -1,6 +1,7 @@
 package com.example.ui
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.ai.assistant.ScriptProductionPackage
@@ -48,7 +49,7 @@ enum class SoraTab(val title: String, val route: String) {
 data class ImageGenerationFormState(
     val prompt: String = "A hyperdetailed masterpiece, futuristic cyberpunk girl with glowing neon katana in rain, 8k resolution, cinematic lighting",
     val title: String = "Cyberpunk Heroine",
-    val style: String = "PHOTOREALISTIC", // PHOTOREALISTIC, ANIME, CYBERPUNK, OCTANE_3D, FANTASY_CINEMATIC, OIL_PAINTING, CONCEPT_ART, WATERCOLOR
+    val style: String = "PHOTOREALISTIC", // PHOTOREALISTIC, ANIME, CYBERPUNK, OCTANE_3D, FANTASY_CINEMATIC, OIL_PAINTING, CONCEPT_ART, WATERCOLOR, DONGHUA, D3_CHARACTER, D3_IMAGE, SCENE_ART
     val resolution: String = "1024x1024", // 512x512, 768x768, 1024x1024, 1536x1024, 2048x2048
     val aspectRatio: String = "1:1", // 1:1, 16:9, 9:16, 4:3, 3:2, 2:3
     val steps: Int = 30, // 10, 20, 30, 50, 100
@@ -61,7 +62,18 @@ data class ImageGenerationFormState(
     val batchCount: Int = 1,
     val sourceImageUri: String? = null,
     val maskImageUri: String? = null,
-    val mode: String = "TEXT_TO_IMAGE", // TEXT_TO_IMAGE, IMAGE_TO_IMAGE, INPAINTING, OUTPAINTING, BACKGROUND_REMOVAL, UPSCALING
+    val targetPoseVideoUri: String? = null,
+    val mode: String = "TEXT_TO_IMAGE", // 12 Modes:
+    // TEXT_TO_IMAGE (1), AI_IMAGE_EDITING (2), AI_UPSCALING (3), AI_INPAINTING (4), AI_OUTPAINTING (5), BACKGROUND_REMOVAL (6),
+    // MOTION_TRANSFER (7), VIDEO_ENHANCEMENT (8), D3_CHARACTER (9), D3_IMAGE (10), DONGHUA_CHARACTER (11), SCENE_GENERATION (12)
+    val upscaleFactor: String = "4x", // 2x, 4x, 8x
+    val outpaintDirection: String = "ALL", // ALL, LEFT, RIGHT, TOP, BOTTOM
+    val donghuaCultivationRank: String = "Immortal Core", // Qi Refining, Foundation Establishment, Golden Core, Nascent Soul, Immortal Sovereign
+    val character3DView: String = "TURNTABLE_360", // FRONT, SIDE, PERSPECTIVE, TURNTABLE_360
+    val videoEnhanceFps: Int = 60,
+    val editInstruction: String = "Transform into golden armor with glowing wings",
+    val motionStrength: Float = 0.85f,
+    val sceneAtmosphere: String = "Volumetric Sunbeams & Cinematic Mist",
     val isGenerating: Boolean = false,
     val errorMessage: String? = null
 )
@@ -415,6 +427,7 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             repository.initializeDefaultData()
             refreshHardwareProfile()
+            refreshStorageVolumes()
             searchHuggingFaceModels("")
         }
     }
@@ -473,8 +486,63 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val realtimeTelemetry: StateFlow<RealtimeTelemetryState> = repository.telemetryPerformanceMonitor.telemetryState
-    val storageVolumes: List<StorageVolumeInfo> get() = repository.deviceStorageManager.getAllStorageVolumes()
+    private val _storageVolumesState = MutableStateFlow<List<StorageVolumeInfo>>(emptyList())
+    val storageVolumes: StateFlow<List<StorageVolumeInfo>> = _storageVolumesState.asStateFlow()
     val storageScanProgress = repository.modelStorageScanner.scanProgress
+
+    private val _preferredStorage = MutableStateFlow("INTERNAL")
+    val preferredStorage: StateFlow<String> = _preferredStorage.asStateFlow()
+
+    private val _customSafTreeUri = MutableStateFlow<String?>(null)
+    val customSafTreeUri: StateFlow<String?> = _customSafTreeUri.asStateFlow()
+
+    private val _isMigratingStorage = MutableStateFlow(false)
+    val isMigratingStorage: StateFlow<Boolean> = _isMigratingStorage.asStateFlow()
+
+    private val _migrationProgress = MutableStateFlow(0f)
+    val migrationProgress: StateFlow<Float> = _migrationProgress.asStateFlow()
+
+    fun refreshStorageVolumes() {
+        _storageVolumesState.value = repository.deviceStorageManager.getAllStorageVolumes()
+        _preferredStorage.value = repository.deviceStorageManager.getPreferredStorageType()
+        _customSafTreeUri.value = repository.deviceStorageManager.getPreferredCustomUri()
+    }
+
+    fun setPreferredStorage(type: String, customUri: String? = null) {
+        val uri = if (!customUri.isNullOrBlank()) Uri.parse(customUri) else null
+        repository.deviceStorageManager.setPreferredStorage(type, uri)
+        _preferredStorage.value = type
+        _customSafTreeUri.value = customUri
+        refreshStorageVolumes()
+    }
+
+    fun migrateModelsToNewStorage(
+        targetStorageType: String,
+        targetCustomUri: String? = null,
+        onProgress: ((Int, String) -> Unit)? = null
+    ) {
+        viewModelScope.launch {
+            _isMigratingStorage.value = true
+            _migrationProgress.value = 0f
+            val models = repository.aiModelDao.getDownloadedModels().first()
+            val customUri = if (!targetCustomUri.isNullOrBlank()) Uri.parse(targetCustomUri) else null
+            val result = repository.deviceStorageManager.migrateModelsToNewStorage(
+                models = models,
+                targetStorageType = targetStorageType,
+                targetCustomUri = customUri,
+                aiModelDao = repository.aiModelDao,
+                onProgress = { modelName, progress, status ->
+                    _migrationProgress.value = progress
+                    _settingsStatusMessage.value = "$status (${(progress * 100).toInt()}%)"
+                    onProgress?.invoke((progress * 100).toInt(), status)
+                }
+            )
+            _isMigratingStorage.value = false
+            _preferredStorage.value = targetStorageType
+            refreshStorageVolumes()
+            _settingsStatusMessage.value = result.second
+        }
+    }
 
     private val _imageGenerationForm = MutableStateFlow(ImageGenerationFormState())
     val imageGenerationForm: StateFlow<ImageGenerationFormState> = _imageGenerationForm.asStateFlow()
@@ -482,6 +550,7 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
     fun scanStorageForModels() {
         viewModelScope.launch {
             val result = repository.modelStorageScanner.reconcileDatabaseWithStorage()
+            refreshStorageVolumes()
             _settingsStatusMessage.value = "Storage Scan complete: ${result.validModelsCount} verified model(s) on device"
         }
     }
@@ -1469,6 +1538,46 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
         _imageGenerationForm.value = _imageGenerationForm.value.copy(maskImageUri = uri)
     }
 
+    fun updateDedicatedImageTargetPoseVideoUri(uri: String?) {
+        _imageGenerationForm.value = _imageGenerationForm.value.copy(targetPoseVideoUri = uri)
+    }
+
+    fun updateDedicatedImageUpscaleFactor(factor: String) {
+        _imageGenerationForm.value = _imageGenerationForm.value.copy(upscaleFactor = factor)
+    }
+
+    fun updateDedicatedImageOutpaintDirection(direction: String) {
+        _imageGenerationForm.value = _imageGenerationForm.value.copy(outpaintDirection = direction)
+    }
+
+    fun updateDedicatedImageDonghuaRank(rank: String) {
+        _imageGenerationForm.value = _imageGenerationForm.value.copy(donghuaCultivationRank = rank)
+    }
+
+    fun updateDedicatedImageCharacter3DView(view: String) {
+        _imageGenerationForm.value = _imageGenerationForm.value.copy(character3DView = view)
+    }
+
+    fun updateDedicatedImage3DView(view: String) {
+        _imageGenerationForm.value = _imageGenerationForm.value.copy(character3DView = view)
+    }
+
+    fun updateDedicatedImageVideoEnhanceFps(fps: Int) {
+        _imageGenerationForm.value = _imageGenerationForm.value.copy(videoEnhanceFps = fps)
+    }
+
+    fun updateDedicatedImageEditInstruction(instruction: String) {
+        _imageGenerationForm.value = _imageGenerationForm.value.copy(editInstruction = instruction)
+    }
+
+    fun updateDedicatedImageMotionStrength(strength: Float) {
+        _imageGenerationForm.value = _imageGenerationForm.value.copy(motionStrength = strength)
+    }
+
+    fun updateDedicatedImageSceneAtmosphere(atmosphere: String) {
+        _imageGenerationForm.value = _imageGenerationForm.value.copy(sceneAtmosphere = atmosphere)
+    }
+
     fun startDedicatedImageGeneration() {
         val form = _imageGenerationForm.value
         val seedToUse = if (form.isRandomSeed) kotlin.random.Random.nextLong(1, 999999999L) else form.seed
@@ -1485,7 +1594,15 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
                     resolutionLabel = form.resolution,
                     cfgScale = form.cfgScale,
                     steps = form.steps,
-                    seed = seedToUse
+                    seed = seedToUse,
+                    mode = form.mode,
+                    upscaleFactor = form.upscaleFactor,
+                    outpaintDirection = form.outpaintDirection,
+                    donghuaRank = form.donghuaCultivationRank,
+                    character3DView = form.character3DView,
+                    editInstruction = form.editInstruction,
+                    motionStrength = form.motionStrength,
+                    sceneAtmosphere = form.sceneAtmosphere
                 )
                 repository.galleryDao.insertItem(res.second)
                 _latestGeneratedResult.value = res.second
@@ -2332,7 +2449,36 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
         wakeWordEngine.clearHistory()
     }
 
+    fun sendImageToVideoStudio(imageUri: String, prompt: String = "") {
+        updateSourceImageUri(imageUri)
+        updateGenerationType("IMAGE_TO_VIDEO")
+        if (prompt.isNotBlank()) {
+            updatePrompt(prompt)
+        }
+        selectTab(SoraTab.GENERATE)
+    }
+
+    fun sendImageToManhwaStudio(imageUri: String, title: String = "Imported Panel", dialogue: String = "") {
+        selectTab(SoraTab.MANHWA_STUDIO)
+    }
+
+    fun sendVoiceToVideoStudio(audioUri: String) {
+        selectTab(SoraTab.EDITOR)
+    }
+
+    fun sendVoiceToManhwaStudio(audioUri: String) {
+        selectTab(SoraTab.MANHWA_STUDIO)
+    }
+
+    fun sendSceneToVideoStudio(scenePrompt: String, durationSec: Int = 5) {
+        updatePrompt(scenePrompt)
+        updateDuration(durationSec)
+        selectTab(SoraTab.GENERATE)
+    }
+
     companion object {
+
+
         fun createInitialEditorProject(): VideoEditorProject {
             val engine = VideoEditorEngine()
             val clip1 = MediaClipTrack(

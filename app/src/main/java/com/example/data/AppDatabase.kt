@@ -12,9 +12,12 @@ import androidx.room.RoomDatabase
         ProjectEntity::class,
         SoraCloudServerEntity::class,
         GalleryItemEntity::class,
-        QuantizationHistoryEntity::class
+        QuantizationHistoryEntity::class,
+        StoryProjectEntity::class,
+        ScriptProjectEntity::class,
+        GenerationLogEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -24,6 +27,10 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun soraCloudDao(): SoraCloudDao
     abstract fun galleryDao(): GalleryDao
     abstract fun quantizationHistoryDao(): QuantizationHistoryDao
+    abstract fun storyProjectDao(): StoryProjectDao
+    abstract fun scriptProjectDao(): ScriptProjectDao
+    abstract fun generationLogDao(): GenerationLogDao
+
 
 
     companion object {

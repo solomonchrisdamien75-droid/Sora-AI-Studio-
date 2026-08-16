@@ -9,24 +9,37 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import java.util.UUID
 
-enum class AIJobType(val label: String) {
-    STORY_GENERATION("Story Generation"),
-    SCRIPT_GENERATION("Script Generation"),
-    VOICE_SYNTHESIS("Voice Synthesis / TTS"),
-    IMAGE_SYNTHESIS("Image Generation"),
-    VIDEO_SYNTHESIS("Video Generation"),
-    MODEL_QUANTIZATION("Model Quantization")
+enum class AIJobType(val label: String, val studio: String) {
+    IMAGE_SYNTHESIS("Image Synthesis", "IMAGE_STUDIO"),
+    IMAGE_EDITING("Image Editing & Inpaint", "IMAGE_STUDIO"),
+    IMAGE_UPSCALING("AI Upscaling", "IMAGE_STUDIO"),
+    VIDEO_SYNTHESIS("Video Synthesis", "VIDEO_STUDIO"),
+    VIDEO_CONTINUATION("Video Continuation", "VIDEO_STUDIO"),
+    VIDEO_ENHANCEMENT("Video Enhancement", "VIDEO_STUDIO"),
+    MANHWA_GENERATION("Manhwa Generation", "MANHWA_STUDIO"),
+    MANHWA_ANIMATION("Manhwa Panel Animation", "MANHWA_STUDIO"),
+    MANHWA_RECAP("Manhwa Video Recap", "MANHWA_STUDIO"),
+    VOICE_SYNTHESIS("Voice Synthesis (TTS)", "VOICE_STUDIO"),
+    VOICE_CLONING("Voice Timbre Cloning", "VOICE_STUDIO"),
+    VOICE_ENHANCEMENT("Voice Enhancement", "VOICE_STUDIO"),
+    STORY_GENERATION("Story Chapter Writing", "SHARED"),
+    SCRIPT_GENERATION("Screenplay & Scripting", "SHARED"),
+    MODEL_QUANTIZATION("Model Quantization Engine", "SHARED")
 }
 
 enum class AIJobStatus(val label: String) {
     QUEUED("Queued"),
+    PREPARING("Preparing"),
     LOADING_MODEL("Loading Model"),
+    GENERATING("Generating"),
     RUNNING("Running"),
+    POST_PROCESSING("Post-Processing"),
     PAUSED("Paused"),
-    CANCELLING("Cancelling"),
-    CANCELLED("Cancelled"),
+    WAITING("Waiting"),
     COMPLETED("Completed"),
-    FAILED("Failed")
+    FAILED("Failed"),
+    CANCELLING("Cancelling"),
+    CANCELLED("Cancelled")
 }
 
 data class UnifiedAIJob(
@@ -51,7 +64,8 @@ data class UnifiedAIJob(
     val tokensGenerated: Int = 0,
     val ramPeakMb: Int = 0,
     val cpuPeakPercent: Int = 0,
-    val gpuUsagePercent: Int = 0
+    val gpuUsagePercent: Int = 0,
+    val temperatureCelsius: Float = 36.5f
 )
 
 class AIJobManager(

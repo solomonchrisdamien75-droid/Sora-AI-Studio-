@@ -173,12 +173,12 @@ fun HomeScreen(viewModel: SoraMainViewModel) {
             }
         }
 
-        // Quick Launch Workbench
+        // Four Production Studios Quick Launch Workbench
         item {
             SoraSectionHeader(
-                title = "Quick Generation Workbench",
-                subtitle = "Choose an offline AI creation mode",
-                icon = Icons.Default.AutoAwesome
+                title = "AI Production Studios",
+                subtitle = "Four independent offline neural creation workspaces",
+                icon = Icons.Default.Hub
             )
 
             Row(
@@ -186,40 +186,40 @@ fun HomeScreen(viewModel: SoraMainViewModel) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 QuickActionCard(
-                    title = "Story Writer",
-                    icon = Icons.Default.AutoStories,
-                    color = NeonCyan,
-                    modifier = Modifier.weight(1f).testTag("quick_story_writer"),
-                    onClick = {
-                        viewModel.selectTab(SoraTab.STORY_STUDIO)
-                    }
-                )
-                QuickActionCard(
-                    title = "Script Studio",
-                    icon = Icons.Default.ViewStream,
+                    title = "Image Studio",
+                    icon = Icons.Default.Palette,
                     color = NeonPurple,
-                    modifier = Modifier.weight(1f).testTag("quick_script_writer"),
+                    modifier = Modifier.weight(1f).testTag("quick_image_studio"),
                     onClick = {
-                        viewModel.selectTab(SoraTab.SCRIPT_STUDIO)
-                    }
-                )
-                QuickActionCard(
-                    title = "Voice AI",
-                    icon = Icons.Default.RecordVoiceOver,
-                    color = AccentGreen,
-                    modifier = Modifier.weight(1f).testTag("quick_voice_ai"),
-                    onClick = {
-                        viewModel.selectTab(SoraTab.VOICE_AI)
+                        viewModel.selectTab(SoraTab.IMAGE_GEN)
                     }
                 )
                 QuickActionCard(
                     title = "Video Studio",
-                    icon = Icons.Default.VideoCall,
-                    color = ElectricPink,
+                    icon = Icons.Default.Videocam,
+                    color = NeonCyan,
                     modifier = Modifier.weight(1f).testTag("quick_video_studio"),
                     onClick = {
                         viewModel.updateGenerationType("TEXT_TO_VIDEO")
                         viewModel.selectTab(SoraTab.GENERATE)
+                    }
+                )
+                QuickActionCard(
+                    title = "Manhwa Studio",
+                    icon = Icons.Default.AutoStories,
+                    color = ElectricPink,
+                    modifier = Modifier.weight(1f).testTag("quick_manhwa_studio"),
+                    onClick = {
+                        viewModel.selectTab(SoraTab.MANHWA_STUDIO)
+                    }
+                )
+                QuickActionCard(
+                    title = "Voice Studio",
+                    icon = Icons.Default.RecordVoiceOver,
+                    color = AccentGreen,
+                    modifier = Modifier.weight(1f).testTag("quick_voice_studio"),
+                    onClick = {
+                        viewModel.selectTab(SoraTab.VOICE_AI)
                     }
                 )
             }

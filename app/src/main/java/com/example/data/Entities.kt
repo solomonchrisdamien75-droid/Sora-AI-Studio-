@@ -120,3 +120,75 @@ data class QuantizationHistoryEntity(
     val benchmarkSpeedAfter: String = "5.8 fps"
 )
 
+@Entity(tableName = "story_projects")
+data class StoryProjectEntity(
+    @PrimaryKey val id: String,
+    val title: String,
+    val genre: String,
+    val theme: String,
+    val language: String = "English",
+    val targetAudience: String = "Young Adult / Adult",
+    val storyLength: String = "Novel Chapter",
+    val chapterCount: Int = 3,
+    val writingStyle: String = "Immersive & Atmospheric",
+    val tone: String = "Cinematic & Suspenseful",
+    val pointOfView: String = "Third-Person Limited",
+    val setting: String = "",
+    val timePeriod: String = "",
+    val mainConflict: String = "",
+    val endingType: String = "",
+    val ageRating: String = "PG-13",
+    val customInstructions: String = "",
+    val outline: String = "",
+    val worldMemory: String = "",
+    val charactersJson: String = "[]",
+    val chaptersJson: String = "[]",
+    val activeChapterIndex: Int = 0,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "script_projects")
+data class ScriptProjectEntity(
+    @PrimaryKey val id: String,
+    val title: String,
+    val topic: String,
+    val videoType: String = "YouTube Explainer",
+    val targetDurationSeconds: Int = 60,
+    val targetWordCount: Int = 180,
+    val language: String = "English",
+    val tone: String = "High Energy & Engaging",
+    val audience: String = "Tech Enthusiasts & Creators",
+    val narratorStyle: String = "Charismatic Tech Commentator",
+    val sceneCount: Int = 4,
+    val visualStyle: String = "Futuristic 3D Octane Render & Cyberpunk Visuals",
+    val platform: String = "YouTube / 16:9",
+    val aspectRatio: String = "16:9",
+    val callToAction: String = "",
+    val hook: String = "",
+    val outline: String = "",
+    val scenesJson: String = "[]",
+    val voiceoverAudioPath: String? = null,
+    val videoProjectId: String? = null,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "generation_logs")
+data class GenerationLogEntity(
+    @PrimaryKey val id: String,
+    val projectId: String,
+    val projectType: String, // STORY, SCRIPT, VIDEO, VOICE, IMAGE
+    val prompt: String,
+    val modelUsed: String,
+    val backendUsed: String,
+    val tokensGenerated: Int = 0,
+    val latencyMs: Long = 0L,
+    val tokensPerSecond: Float = 0.0f,
+    val ramPeakMb: Int = 0,
+    val timestamp: Long = System.currentTimeMillis(),
+    val status: String = "SUCCESS", // SUCCESS, FAILED, CANCELLED
+    val logDetails: String = ""
+)
+
+

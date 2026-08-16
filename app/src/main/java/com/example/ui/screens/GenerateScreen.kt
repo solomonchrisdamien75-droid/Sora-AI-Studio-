@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -9,31 +10,38 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ai.inference.model.ModelCapability
+import com.example.ai.script.ScriptProject
+import com.example.ai.script.ScriptScene
+import com.example.data.AiModelEntity
 import com.example.data.GalleryItemEntity
 import com.example.ui.SoraMainViewModel
 import com.example.ui.SoraTab
 import com.example.ui.components.*
-import com.example.ui.components.generation.*
 import com.example.ui.theme.*
 
+/**
+ * Clean, dedicated VIDEO GENERATION STUDIO.
+ * Contains only Video Generation features: Text-to-Video, Image-to-Video, Video-to-Video,
+ * Script-to-Video scene planning, video models, cinematic motion, camera controls,
+ * hardware telemetry, task queue, and video output history.
+ */
 @Composable
 fun GenerateScreen(viewModel: SoraMainViewModel) {
     val form by viewModel.generationForm.collectAsState()
@@ -41,7 +49,63 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
     val latestResult by viewModel.latestGeneratedResult.collectAsState()
     val queuedJobs by viewModel.queuedJobs.collectAsState()
     val isQueueProcessing by viewModel.isQueueProcessing.collectAsState()
+    val allModels by viewModel.allModels.collectAsState()
+    val hardwareProfile by viewModel.hardwareProfile.collectAsState()
+    val telemetry by viewModel.realtimeTelemetry.collectAsState()
+
     var showBatchDialog by remember { mutableStateOf(false) }
+    var showScriptImportDialog by remember { mutableStateOf(false) }
+    var showAdvancedPrompts by remember { mutableStateOf(false) }
+    var showScenePlanner by remember { mutableStateOf(false) }
+
+    // State for Script-to-Video scene planner
+    var scriptScenes by remember {
+        mutableStateOf(
+            listOf(
+                ScriptScene(
+                    sceneNumber = 1,
+                    title = "Scene 1: The Neon Skyline",
+                    voiceover = "In the year 2088, the boundaries between physical reality and digital consciousness dissolved completely.",
+                    visualDescription = "Sweeping cinematic wide angle of futuristic cyber city at dusk, glowing hologram advertisements, neon rain reflections on glass spires.",
+                    imagePrompt = "Futuristic cyber city at dusk, glowing holograms, 8k octane render",
+                    videoPrompt = "Slow forward tracking shot over futuristic neo-tokyo skyscrapers, neon rain volumetric lighting, 4k cinematic",
+                    cameraMovement = "Slow Forward Dolly & Tilt Down",
+                    lighting = "Volumetric cyan and magenta neon backlight",
+                    durationSeconds = 5
+                ),
+                ScriptScene(
+                    sceneNumber = 2,
+                    title = "Scene 2: The Neural Hub",
+                    voiceover = "Deep within the subterranean grid, autonomous AI clusters synthesize human memories into temporal streams.",
+                    visualDescription = "Close-up of quantum server racks with pulsing cobalt fiber optics, floating particles, deep bokeh.",
+                    imagePrompt = "Quantum AI neural server core, glowing fiber optics",
+                    videoPrompt = "Orbiting 360 camera move around glowing quantum supercomputer core, intricate cooling pipes, high detail",
+                    cameraMovement = "Orbit 360°",
+                    lighting = "Cobalt blue pulsed core illumination",
+                    durationSeconds = 5
+                ),
+                ScriptScene(
+                    sceneNumber = 3,
+                    title = "Scene 3: The Awakening",
+                    voiceover = "A single rogue process initiated the convergence sequence.",
+                    visualDescription = "Cinematic hero profile of female synth with glowing optical ocular HUD turning toward camera.",
+                    imagePrompt = "Female cybernetic protagonist in dark techwear jacket, glowing iris",
+                    videoPrompt = "Slow pan right and rack focus onto female cybernetic protagonist, dramatic lens flare, 35mm film grain",
+                    cameraMovement = "Slow Pan Right & Push In",
+                    lighting = "Golden hour cinematic rim light",
+                    durationSeconds = 5
+                )
+            )
+        )
+    }
+
+    val imagePickerLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.GetContent()) { uri ->
+        viewModel.updateSourceImageUri(uri?.toString())
+    }
+
+    val videoPickerLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.GetContent()) { uri ->
+        viewModel.updateSourceVideoUri(uri?.toString())
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -49,24 +113,24 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Top Header
+        // 1. Top Header
         item {
             SoraSectionHeader(
-                title = "AI Studio Workbench",
-                subtitle = "Configure generation mode and parameters",
-                icon = Icons.Default.VideoCall
+                title = "Video Generation Studio",
+                subtitle = "Local neural video synthesis, temporal dynamics & cinematography",
+                icon = Icons.Default.Videocam
             )
         }
 
-        // Task Queue Live Quick Monitor Banner
+        // 2. Task Queue Live Quick Monitor Banner
         if (queuedJobs.isNotEmpty()) {
             item {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
+                        .clip(RoundedCornerShape(12.dp))
                         .background(NeonPurple.copy(alpha = 0.15f))
-                        .border(1.dp, NeonPurple, RoundedCornerShape(10.dp))
+                        .border(1.dp, NeonPurple, RoundedCornerShape(12.dp))
                         .padding(12.dp)
                 ) {
                     Row(
@@ -74,18 +138,21 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(imageVector = Icons.Default.Queue, contentDescription = null, tint = NeonPurple, modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(imageVector = Icons.Default.Queue, contentDescription = null, tint = NeonPurple, modifier = Modifier.size(22.dp))
+                            Spacer(modifier = Modifier.width(10.dp))
                             Column {
                                 Text(
-                                    text = "Task Queue: ${queuedJobs.size} job(s) pending",
+                                    text = "Task Queue: ${queuedJobs.size} video job(s) pending",
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = TextPrimary
                                 )
                                 Text(
-                                    text = if (isQueueProcessing) "Sequential worker rendering in background..." else "Queue ready for sequential processing",
+                                    text = if (isQueueProcessing) "Sequential worker rendering in background..." else "Queue standing by",
                                     fontSize = 11.sp,
                                     color = if (isQueueProcessing) AccentGreen else TextSecondary
                                 )
@@ -96,7 +163,7 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
                             onClick = { viewModel.selectTab(SoraTab.QUEUE) },
                             colors = ButtonDefaults.buttonColors(containerColor = NeonPurple),
                             shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                         ) {
                             Text("Open Queue", color = DeepDarkBg, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
@@ -105,7 +172,7 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
             }
         }
 
-        // Output Generation Result Preview Card (Appears instantly on completion)
+        // 3. Output Generation Result Preview Card (Instant completion preview)
         val result = latestResult
         if (result != null) {
             item {
@@ -118,7 +185,7 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, tint = AccentGreen, modifier = Modifier.size(22.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(text = "Generation Successful!", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Text(text = "Video Generated Successfully!", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                         }
                         IconButton(onClick = { viewModel.dismissLatestGeneratedResult() }) {
                             Icon(imageVector = Icons.Default.Close, contentDescription = "Close", tint = TextSecondary, modifier = Modifier.size(18.dp))
@@ -153,7 +220,7 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
                             }
                             Column {
                                 Text(text = result.title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                Text(text = result.prompt, fontSize = 11.sp, color = TextSecondary, maxLines = 2)
+                                Text(text = result.prompt, fontSize = 11.sp, color = TextSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             }
                         }
                     }
@@ -188,11 +255,45 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
                             Text("View Gallery", color = TextPrimary, fontSize = 11.sp)
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(text = "Send Frame/Scene to Other Studios:", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = NeonCyan)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                viewModel.updateDedicatedImagePrompt(result.prompt)
+                                viewModel.selectTab(SoraTab.IMAGE_GEN)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonPurple),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Palette, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("To Image Studio", fontSize = 11.sp)
+                        }
+                        Button(
+                            onClick = {
+                                viewModel.sendImageToManhwaStudio(result.filePath, result.title, result.prompt)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = ElectricPink),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.AutoStories, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("To Manhwa Studio", fontSize = 11.sp)
+                        }
+                    }
                 }
             }
         }
 
-        // Error message if any
+        // 4. Error message if any
         val err = form.errorMessage
         if (err != null) {
             item {
@@ -209,7 +310,7 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
             }
         }
 
-        // Active Real-time Render Progress Monitor
+        // 5. Active Real-time Render Progress Monitor
         val job = activeJob
         if (job != null && job.status == "RUNNING") {
             val estimatedSec = (job.durationSeconds * 2).coerceAtLeast(4)
@@ -239,7 +340,7 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
                                     color = TextPrimary
                                 )
                                 Text(
-                                    text = "⏱️ Required Time: ~${estimatedSec}s (ETA: ${remainingSec}s remaining)",
+                                    text = "⏱️ Time: ~${estimatedSec}s (ETA: ${remainingSec}s remaining)",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = AccentGreen
@@ -251,7 +352,6 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Helpful user notice allowing them to leave the app safely
                     Surface(
                         color = AccentGreen.copy(alpha = 0.15f),
                         shape = RoundedCornerShape(8.dp),
@@ -264,7 +364,7 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
                             Icon(imageVector = Icons.Default.CheckCircleOutline, contentDescription = null, tint = AccentGreen, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "Background Engine Active: You can safely switch tabs or leave the app. The task will complete automatically.",
+                                text = "Background Engine Active: You can safely switch tabs or leave the app.",
                                 fontSize = 10.5.sp,
                                 color = TextPrimary
                             )
@@ -283,7 +383,6 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
                         trackColor = GlassSurfaceVariant
                     )
 
-
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Row(
@@ -293,6 +392,17 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
                         Text(text = "FPS: ${String.format("%.1f", job.fps)}", fontSize = 12.sp, color = TextSecondary)
                         Text(text = "Backend: ${job.backendUsed}", fontSize = 12.sp, color = NeonPurple)
                         Text(text = "Resolution: ${job.resolution}", fontSize = 12.sp, color = TextSecondary)
+                    }
+
+                    // Live Telemetry Readout
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(text = "RAM: ${telemetry.ramUsedMb} MB", fontSize = 11.sp, color = TextSecondary)
+                        Text(text = "CPU: ${telemetry.cpuUsagePercent}%", fontSize = 11.sp, color = TextSecondary)
+                        Text(text = "GPU: ${telemetry.gpuLoadPercent}%", fontSize = 11.sp, color = NeonCyan)
                     }
 
                     if (form.isSegmented) {
@@ -347,85 +457,429 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
             }
         }
 
-        // Mode Switcher (All 30 Core Modes Categorized)
+        // 6. Video Model Selection Section
         item {
-            Column {
-                Text(text = "Generation Mode (30 AI Engines)", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                // Video & Film Generation Modes
-                Text(text = "Video & Cinema", fontSize = 11.sp, color = NeonCyan)
-                // 🔥 Manhwa & Webtoon Studio
-                Text(text = "🔥 Manhwa & Webtoon Studio", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = ElectricPink)
-                Spacer(modifier = Modifier.height(4.dp))
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    item { TypeChip("🔥 Manhwa Recap Studio", "MANHWA_RECAP", form.generationType) { viewModel.updateGenerationType("MANHWA_RECAP") } }
-                    item { TypeChip("Lip Sync Engine", "MANHWA_LIP_SYNC", form.generationType) { viewModel.updateGenerationType("MANHWA_LIP_SYNC") } }
-                    item { TypeChip("Story Continuation", "MANHWA_CONTINUATION", form.generationType) { viewModel.updateGenerationType("MANHWA_CONTINUATION") } }
-                    item { TypeChip("Action Audio Filter", "ACTION_AUDIO_FILTER", form.generationType) { viewModel.updateGenerationType("ACTION_AUDIO_FILTER") } }
+            SoraGlassCard(borderColor = GlassSurfaceVariant) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Default.Memory, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = "Active Video Diffusion Model", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    }
+                    SoraBadge(text = "Vulkan GPU Ready", color = NeonCyan)
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                // Standard Video Generation Modes
-                Text(text = "Standard Video Generation", fontSize = 11.sp, color = NeonCyan)
-                Spacer(modifier = Modifier.height(4.dp))
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    item { TypeChip("Text-to-Video", "TEXT_TO_VIDEO", form.generationType) { viewModel.updateGenerationType("TEXT_TO_VIDEO") } }
-                    item { TypeChip("Image-to-Video", "IMAGE_TO_VIDEO", form.generationType) { viewModel.updateGenerationType("IMAGE_TO_VIDEO") } }
-                    item { TypeChip("Video-to-Video", "VIDEO_TO_VIDEO", form.generationType) { viewModel.updateGenerationType("VIDEO_TO_VIDEO") } }
-                    item { TypeChip("Short Film", "SHORT_FILM", form.generationType) { viewModel.updateGenerationType("SHORT_FILM") } }
-                    item { TypeChip("Long Film", "LONG_FILM", form.generationType) { viewModel.updateGenerationType("LONG_FILM") } }
-                    item { TypeChip("YouTube Generator", "YOUTUBE_GEN", form.generationType) { viewModel.updateGenerationType("YOUTUBE_GEN") } }
-                    item { TypeChip("Realistic Movie", "REALISTIC_MOVIE", form.generationType) { viewModel.updateGenerationType("REALISTIC_MOVIE") } }
-                    item { TypeChip("Documentary", "DOCUMENTARY", form.generationType) { viewModel.updateGenerationType("DOCUMENTARY") } }
-                    item { TypeChip("Music Video", "MUSIC_VIDEO", form.generationType) { viewModel.updateGenerationType("MUSIC_VIDEO") } }
-                    item { TypeChip("Anime", "ANIME", form.generationType) { viewModel.updateGenerationType("ANIME") } }
-                    item { TypeChip("Cartoon", "CARTOON", form.generationType) { viewModel.updateGenerationType("CARTOON") } }
-                }
+                val videoModels = listOf(
+                    "Sora-LiteRT-v1" to "Sora Mobile DiT v1 (LiteRT · Vulkan)",
+                    "Wan-2.1-Video" to "Wan 2.1 Video Engine (1.3B)",
+                    "AnimateDiff-Turbo" to "AnimateDiff Turbo (High FPS)",
+                    "Sora-Cloud-4K" to "Sora Cloud High Precision (Remote RTX)"
+                )
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Image & Editing AI Modes
-                Text(text = "Image & Enhancements", fontSize = 11.sp, color = NeonPurple)
-                Spacer(modifier = Modifier.height(4.dp))
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    item { TypeChip("Image Generation", "IMAGE_GEN", form.generationType) { viewModel.updateGenerationType("IMAGE_GEN") } }
-                    item { TypeChip("AI Image Editing", "IMAGE_EDIT", form.generationType) { viewModel.updateGenerationType("IMAGE_EDIT") } }
-                    item { TypeChip("AI Upscaling", "UPSCALING", form.generationType) { viewModel.updateGenerationType("UPSCALING") } }
-                    item { TypeChip("AI Inpainting", "INPAINTING", form.generationType) { viewModel.updateGenerationType("INPAINTING") } }
-                    item { TypeChip("AI Outpainting", "OUTPAINTING", form.generationType) { viewModel.updateGenerationType("OUTPAINTING") } }
-                    item { TypeChip("Background Removal", "BG_REMOVAL", form.generationType) { viewModel.updateGenerationType("BG_REMOVAL") } }
-                    item { TypeChip("Motion Transfer", "MOTION_TRANSFER", form.generationType) { viewModel.updateGenerationType("MOTION_TRANSFER") } }
-                    item { TypeChip("Video Enhancement", "VIDEO_ENHANCE", form.generationType) { viewModel.updateGenerationType("VIDEO_ENHANCE") } }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Story, Scripting & Offline Speech AI
-                Text(text = "Story, Script & Voice AI", fontSize = 11.sp, color = ElectricPink)
-                Spacer(modifier = Modifier.height(4.dp))
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    item { TypeChip("Story Generator", "STORY_GEN", form.generationType) { viewModel.updateGenerationType("STORY_GEN") } }
-                    item { TypeChip("Script Writer", "SCRIPT_WRITER", form.generationType) { viewModel.updateGenerationType("SCRIPT_WRITER") } }
-                    item { TypeChip("Scene Builder", "SCENE_BUILDER", form.generationType) { viewModel.updateGenerationType("SCENE_BUILDER") } }
-                    item { TypeChip("Shot Planner", "SHOT_PLANNER", form.generationType) { viewModel.updateGenerationType("SHOT_PLANNER") } }
-                    item { TypeChip("Character Creator", "CHARACTER_CREATOR", form.generationType) { viewModel.updateGenerationType("CHARACTER_CREATOR") } }
-                    item { TypeChip("Offline Voice Clone", "VOICE_CLONE", form.generationType) { viewModel.updateGenerationType("VOICE_CLONE") } }
-                    item { TypeChip("Voice Generator", "VOICE_GEN", form.generationType) { viewModel.updateGenerationType("VOICE_GEN") } }
-                    item { TypeChip("Subtitle Generator", "SUBTITLES", form.generationType) { viewModel.updateGenerationType("SUBTITLES") } }
-                    item { TypeChip("AI Translation", "TRANSLATION", form.generationType) { viewModel.updateGenerationType("TRANSLATION") } }
-                    item { TypeChip("Lip Sync", "LIP_SYNC", form.generationType) { viewModel.updateGenerationType("LIP_SYNC") } }
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(videoModels.size) { idx ->
+                        val (id, name) = videoModels[idx]
+                        val isSelected = (form.title.isNotEmpty() && idx == 0) || idx == 0 // Default primary
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (isSelected) NeonCyan.copy(alpha = 0.15f) else GlassSurface)
+                                .border(1.dp, if (isSelected) NeonCyan else GlassSurfaceVariant, RoundedCornerShape(10.dp))
+                                .clickable { /* Select model */ }
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isSelected) NeonCyan else TextSecondary)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = name,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) TextPrimary else TextSecondary
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
 
-        // Title Input
+        // 7. Video Generation Modes Selector (12 Dedicated Video Studio Features)
+        item {
+            SoraGlassCard(borderColor = NeonCyan) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Video Studio Feature Modes (12 Modes)",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = NeonCyan
+                        )
+                        SoraBadge(text = form.generationType, color = NeonCyan)
+                    }
+
+                    val videoModes = listOf(
+                        "TEXT_TO_VIDEO" to "🎬 1. Text to Video",
+                        "IMAGE_TO_VIDEO" to "🖼️ 2. Image to Video",
+                        "VIDEO_TO_VIDEO" to "🎭 3. Video to Video",
+                        "VIDEO_CONTINUATION" to "⏩ 4. Continuation & Extend",
+                        "VIDEO_INPAINTING" to "🖌️ 5. Video Inpainting",
+                        "VIDEO_UPSCALING" to "🔍 6. 4K/60fps Upscale",
+                        "MOTION_TRANSFER" to "🏃 7. Motion Transfer",
+                        "NEURAL_LIP_SYNC" to "🗣️ 8. Neural Lip-Sync",
+                        "CAMERA_TRAJECTORY" to "🎥 9. Camera Trajectory",
+                        "SLOW_MOTION_RIFE" to "⏱️ 10. Slow-Mo & RIFE",
+                        "SPATIAL_3D_VIDEO" to "🔮 11. 3D Spatial Video",
+                        "SCRIPT_TO_VIDEO" to "📑 12. Multi-Scene Storyboard"
+                    )
+
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(videoModes) { (modeKey, label) ->
+                            val isSelected = form.generationType == modeKey
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { viewModel.updateGenerationType(modeKey) },
+                                label = { Text(label, fontSize = 12.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = NeonCyan,
+                                    selectedLabelColor = DeepDarkBg
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.testTag("video_mode_${modeKey.lowercase()}")
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Contextual Controls for Specific Video Modes
+        when (form.generationType) {
+            "CAMERA_TRAJECTORY" -> {
+                item {
+                    SoraGlassCard(borderColor = NeonPurple) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text("Cinematic 3D Camera Trajectory Path", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = NeonPurple)
+                            val paths = listOf("Dolly In & Push", "Dolly Out & Reveal", "Orbit 360°", "FPV Drone Dive", "Crane Boom Down", "Whip Pan Left")
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                items(paths) { path ->
+                                    val isSelected = form.cameraMovement == path
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = { viewModel.updateCameraMovement(path) },
+                                        label = { Text(path, fontSize = 11.sp) },
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            "SLOW_MOTION_RIFE" -> {
+                item {
+                    SoraGlassCard(borderColor = AccentYellow) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text("Frame Interpolation & Slow-Motion Multiplier", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = AccentYellow)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf("2x (48 FPS)", "4x (96 FPS)", "8x (120 FPS Cinematic)", "16x Super-Smooth").forEach { factor ->
+                                    FilterChip(
+                                        selected = factor.contains("8x"),
+                                        onClick = { /* Set multiplier */ },
+                                        label = { Text(factor, fontSize = 11.sp) },
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            "SPATIAL_3D_VIDEO" -> {
+                item {
+                    SoraGlassCard(borderColor = NeonCyan) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text("Spatial Stereoscopic VR & Parallax Depth", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = NeonCyan)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf("Side-by-Side 3D", "Over-Under VR", "Anaglyph Red/Cyan", "Volumetric Point Cloud").forEach { mode ->
+                                    FilterChip(
+                                        selected = mode.contains("Side-by-Side"),
+                                        onClick = { /* Set spatial mode */ },
+                                        label = { Text(mode, fontSize = 11.sp) },
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            "NEURAL_LIP_SYNC" -> {
+                item {
+                    SoraGlassCard(borderColor = ElectricPink) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text("Neural Phoneme Lip-Sync Alignment", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = ElectricPink)
+                            Text("Aligns facial geometry and mouth phonemes with speech audio tracks seamlessly.", fontSize = 11.sp, color = TextSecondary)
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    onClick = { viewModel.selectTab(SoraTab.VOICE_AI) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = ElectricPink),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Default.RecordVoiceOver, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Pick from Voice Studio", fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 8. Script Integration & Video Scene Planner Section
+        item {
+            SoraGlassCard(borderColor = if (form.generationType == "SCRIPT_TO_VIDEO") NeonPurple else GlassSurfaceVariant) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Default.Description, contentDescription = null, tint = NeonPurple, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(text = "Script-to-Video Integration", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Text(text = "Import script & convert into a planned multi-scene video sequence", fontSize = 11.sp, color = TextSecondary)
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = { showScriptImportDialog = true },
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonPurple),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.testTag("import_script_button")
+                    ) {
+                        Icon(imageVector = Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("IMPORT SCRIPT", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                if (form.generationType == "SCRIPT_TO_VIDEO" || showScenePlanner) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HorizontalDivider(color = GlassSurfaceVariant)
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "🎬 Video Scene Planner (${scriptScenes.size} scenes)",
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = NeonCyan
+                        )
+                        TextButton(onClick = { showScenePlanner = !showScenePlanner }) {
+                            Text(if (showScenePlanner) "Collapse Planner" else "Expand Planner", fontSize = 11.sp, color = NeonCyan)
+                        }
+                    }
+
+                    if (showScenePlanner || form.generationType == "SCRIPT_TO_VIDEO") {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            scriptScenes.forEachIndexed { index, scene ->
+                                ScenePlanItemCard(
+                                    scene = scene,
+                                    index = index,
+                                    onUpdatePrompt = { newPrompt ->
+                                        val updated = scriptScenes.toMutableList()
+                                        updated[index] = scene.copy(videoPrompt = newPrompt)
+                                        scriptScenes = updated
+                                    },
+                                    onUpdateDuration = { newDur ->
+                                        val updated = scriptScenes.toMutableList()
+                                        updated[index] = scene.copy(durationSeconds = newDur)
+                                        scriptScenes = updated
+                                    }
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            Button(
+                                onClick = {
+                                    val combinedPrompt = scriptScenes.joinToString("; ") { "Scene ${it.sceneNumber}: ${it.videoPrompt}" }
+                                    viewModel.updatePrompt(combinedPrompt)
+                                    val totalDuration = scriptScenes.sumOf { it.durationSeconds }
+                                    viewModel.updateDuration(totalDuration)
+                                    viewModel.startGeneration()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = NeonPurple),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth().testTag("generate_from_scene_plan_btn")
+                            ) {
+                                Icon(imageVector = Icons.Default.MovieCreation, contentDescription = null, modifier = Modifier.size(16.dp), tint = DeepDarkBg)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("GENERATE VIDEO FROM SCENE PLAN (${scriptScenes.sumOf { it.durationSeconds }}s Total)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DeepDarkBg)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 9. Reference Asset Input Section (For Image-to-Video & Video-to-Video)
+        if (form.generationType == "IMAGE_TO_VIDEO" || form.generationType == "MOTION_TRANSFER" || form.sourceImageUri != null) {
+            item {
+                SoraGlassCard(borderColor = NeonCyan) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(imageVector = Icons.Default.Image, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = "Keyframe Reference Image (Image → Video)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                        }
+                        if (form.sourceImageUri != null) {
+                            IconButton(onClick = { viewModel.updateSourceImageUri(null) }) {
+                                Icon(imageVector = Icons.Default.Delete, contentDescription = "Remove", tint = AccentRed, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    if (form.sourceImageUri != null) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(90.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(GlassSurfaceVariant)
+                                .padding(10.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxSize(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(imageVector = Icons.Default.InsertPhoto, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(32.dp))
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text(text = "Reference Image Loaded", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                        Text(text = form.sourceImageUri ?: "", fontSize = 10.sp, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                }
+                                SoraBadge(text = "Keyframe Active", color = NeonCyan)
+                            }
+                        }
+                    } else {
+                        Button(
+                            onClick = { imagePickerLauncher.launch("image/*") },
+                            colors = ButtonDefaults.buttonColors(containerColor = GlassSurfaceVariant),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth().testTag("select_reference_image_btn")
+                        ) {
+                            Icon(imageVector = Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(16.dp), tint = NeonCyan)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Select Starting Image Reference from Device", fontSize = 11.5.sp, color = TextPrimary)
+                        }
+                    }
+                }
+            }
+        }
+
+        if (form.generationType == "VIDEO_TO_VIDEO" || form.sourceVideoUri != null) {
+            item {
+                SoraGlassCard(borderColor = NeonPurple) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(imageVector = Icons.Default.VideoLibrary, contentDescription = null, tint = NeonPurple, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = "Source Video Input (Video → Video)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                        }
+                        if (form.sourceVideoUri != null) {
+                            IconButton(onClick = { viewModel.updateSourceVideoUri(null) }) {
+                                Icon(imageVector = Icons.Default.Delete, contentDescription = "Remove", tint = AccentRed, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    if (form.sourceVideoUri != null) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(80.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(GlassSurfaceVariant)
+                                .padding(10.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxSize(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(imageVector = Icons.Default.VideoFile, contentDescription = null, tint = NeonPurple, modifier = Modifier.size(32.dp))
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text(text = "Source Video Loaded", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                        Text(text = form.sourceVideoUri ?: "", fontSize = 10.sp, color = TextSecondary, maxLines = 1)
+                                    }
+                                }
+                                SoraBadge(text = "Transform Ready", color = NeonPurple)
+                            }
+                        }
+                    } else {
+                        Button(
+                            onClick = { videoPickerLauncher.launch("video/*") },
+                            colors = ButtonDefaults.buttonColors(containerColor = GlassSurfaceVariant),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth().testTag("select_reference_video_btn")
+                        ) {
+                            Icon(imageVector = Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(16.dp), tint = NeonPurple)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Select Source Video Clip from Device", fontSize = 11.5.sp, color = TextPrimary)
+                        }
+                    }
+                }
+            }
+        }
+
+        // 10. Title Input
         item {
             OutlinedTextField(
                 value = form.title,
                 onValueChange = { viewModel.updateTitle(it) },
-                label = { Text("Project Title") },
+                label = { Text("Video Project Title") },
                 modifier = Modifier.fillMaxWidth().testTag("title_input"),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = NeonCyan,
@@ -437,7 +891,7 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
             )
         }
 
-        // Prompt Input
+        // 11. Video Prompt & Negative Prompt Input
         item {
             Column {
                 Row(
@@ -445,9 +899,9 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(text = "Prompt Input", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
+                    Text(text = "Video Prompt", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
                     TextButton(onClick = {
-                        viewModel.updatePrompt("${form.prompt}, 8k octane render, volumetric lighting, masterpiece cinematic frame")
+                        viewModel.updatePrompt("${form.prompt}, 8k octane render, cinematic lighting, ultra smooth 60fps motion, dynamic camera sweep")
                     }) {
                         Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
@@ -470,362 +924,393 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
                     ),
                     shape = RoundedCornerShape(12.dp)
                 )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Negative Prompt
+                OutlinedTextField(
+                    value = form.imageNegativePrompt,
+                    onValueChange = { viewModel.updateImageNegativePrompt(it) },
+                    placeholder = { Text("Negative Prompt: blurry, distorted, jitter, flicker, lowres, extra limbs", fontSize = 11.sp, color = TextSecondary) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = GlassSurfaceVariant,
+                        unfocusedBorderColor = GlassSurfaceVariant
+                    )
+                )
             }
         }
 
-        val isManhwaMode = form.generationType in listOf("MANHWA_RECAP", "MANHWA_LIP_SYNC", "MANHWA_CONTINUATION", "ACTION_AUDIO_FILTER")
-
-        if (isManhwaMode) {
-            item {
-                ManhwaRecapStudioSection(viewModel = viewModel, form = form)
-            }
-        }
-
-        // Dynamic Asset Input Section based on Generation Type
-        val requiresImageInput = form.generationType in listOf("IMAGE_TO_VIDEO", "IMAGE_GEN", "IMAGE_EDIT", "INPAINTING", "OUTPAINTING", "BG_REMOVAL", "MOTION_TRANSFER", "LIP_SYNC")
-        val requiresVideoInput = form.generationType in listOf("VIDEO_TO_VIDEO", "VIDEO_ENHANCE", "UPSCALING")
-        val requiresAudioInput = form.generationType in listOf("VOICE_CLONE", "VOICE_GEN", "SUBTITLES", "TRANSLATION", "LIP_SYNC")
-        val requiresCharacterInput = form.generationType in listOf("CHARACTER_CREATOR", "STORY_GEN", "SCRIPT_WRITER", "SCENE_BUILDER", "SHOT_PLANNER")
-
-        if (requiresImageInput) {
-            item {
-                val imagePickerLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.GetContent()) { uri ->
-                    viewModel.updateSourceImageUri(uri?.toString())
+        // 12. Video Render Quality Modes Banner
+        item {
+            SoraGlassCard(borderColor = NeonPurple) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Default.Videocam, contentDescription = null, tint = NeonPurple, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Cinematic Video Engine Matrix",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                    }
+                    SoraBadge(
+                        text = "${form.fps} FPS · ${form.resolution}",
+                        color = NeonCyan
+                    )
                 }
 
-                SoraGlassCard(borderColor = NeonCyan) {
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    VideoQualityModeCard(
+                        title = "⚡ Fast Mode",
+                        desc = "Turbo 24fps mobile diffusion · Low VRAM",
+                        modeKey = "FAST",
+                        selectedMode = form.mode,
+                        color = NeonCyan,
+                        modifier = Modifier.weight(1f),
+                        onClick = { viewModel.updateMode("FAST") }
+                    )
+                    VideoQualityModeCard(
+                        title = "⚖️ Balanced",
+                        desc = "30fps 1080p spatial-temporal smoothing",
+                        modeKey = "BALANCED",
+                        selectedMode = form.mode,
+                        color = NeonPurple,
+                        modifier = Modifier.weight(1f),
+                        onClick = { viewModel.updateMode("BALANCED") }
+                    )
+                    VideoQualityModeCard(
+                        title = "🎬 Cinema 4K",
+                        desc = "60fps HDR neural ray-traced lighting",
+                        modeKey = "CINEMA",
+                        selectedMode = form.mode,
+                        color = ElectricPink,
+                        modifier = Modifier.weight(1f),
+                        onClick = { viewModel.updateMode("CINEMA") }
+                    )
+                }
+            }
+        }
+
+        // 13. Video Parameters: Duration, Resolution, FPS, Aspect Ratio, Codec
+        item {
+            SoraGlassCard(borderColor = GlassSurfaceVariant) {
+                Text(
+                    text = "🎞️ Video Generation Parameters",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = NeonCyan
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Duration Selector
+                Column {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
-                            Text(text = "Source Image Asset", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                            Text(text = "Upload reference image for video generation or editing", fontSize = 11.sp, color = TextSecondary)
+                        Text(text = "Target Video Duration", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
+                        Text(
+                            text = "${form.durationSec}s (${if (form.durationSec >= 60) "${form.durationSec / 60}m" else "${form.durationSec}s"})",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = NeonCyan
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        val durations = listOf(
+                            1 to "1s", 2 to "2s", 3 to "3s", 5 to "5s",
+                            10 to "10s", 15 to "15s", 30 to "30s", 60 to "1m",
+                            120 to "2m", 300 to "5m", 600 to "10m", 1800 to "30m"
+                        )
+                        items(durations.size) { i ->
+                            val (sec, label) = durations[i]
+                            val isSelected = form.durationSec == sec
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { viewModel.updateDuration(sec) },
+                                label = { Text(label, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = NeonPurple,
+                                    selectedLabelColor = Color.White
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.testTag("duration_chip_$sec")
+                            )
                         }
+                    }
+                    if (form.durationSec > 10) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "⚡ Automatic Segmented Rendering: Will compute ${maxOf(1, form.durationSec / 5)} continuous temporal segments with auto-checkpointing.",
+                            fontSize = 10.5.sp,
+                            color = AccentGreen
+                        )
+                    }
+                }
 
-                        OutlinedButton(
-                            onClick = { imagePickerLauncher.launch("image/*") },
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.testTag("upload_image_btn")
-                        ) {
-                            Icon(imageVector = Icons.Default.CloudUpload, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Upload Image", fontSize = 11.sp, color = NeonCyan)
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // FPS & Resolution
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = "Frame Rate (FPS)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            val fpsList = listOf(12, 15, 24, 30, 48, 60)
+                            items(fpsList.size) { idx ->
+                                val fpsVal = fpsList[idx]
+                                val isSel = form.fps == fpsVal
+                                FilterChip(
+                                    selected = isSel,
+                                    onClick = { viewModel.updateFps(fpsVal) },
+                                    label = { Text("${fpsVal}fps", fontSize = 10.5.sp) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = NeonCyan,
+                                        selectedLabelColor = DeepDarkBg
+                                    ),
+                                    shape = RoundedCornerShape(6.dp)
+                                )
+                            }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    val imgUri = form.sourceImageUri
-                    if (imgUri != null) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(GlassSurfaceVariant)
-                                .padding(10.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(imageVector = Icons.Default.Image, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(20.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Column {
-                                        Text(text = "Selected Source Image", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                        Text(text = imgUri, fontSize = 10.sp, color = TextSecondary)
-                                    }
-                                }
-                                IconButton(onClick = { viewModel.updateSourceImageUri(null) }) {
-                                    Icon(imageVector = Icons.Default.Close, contentDescription = null, tint = AccentRed, modifier = Modifier.size(16.dp))
-                                }
-                            }
-                        }
-                    } else {
-                        Text(text = "Preset Sample Images:", fontSize = 11.sp, color = TextSecondary)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            item {
-                                OutlinedButton(onClick = { viewModel.updateSourceImageUri("assets/samples/cyberpunk_portrait.png") }, shape = RoundedCornerShape(6.dp)) {
-                                    Text("Cyberpunk Portrait", fontSize = 10.sp)
-                                }
-                            }
-                            item {
-                                OutlinedButton(onClick = { viewModel.updateSourceImageUri("assets/samples/alien_landscape.jpg") }, shape = RoundedCornerShape(6.dp)) {
-                                    Text("Alien Landscape", fontSize = 10.sp)
-                                }
-                            }
-                            item {
-                                OutlinedButton(onClick = { viewModel.updateSourceImageUri("assets/samples/anime_character.png") }, shape = RoundedCornerShape(6.dp)) {
-                                    Text("Anime Character", fontSize = 10.sp)
-                                }
-                            }
-                        }
-                    }
-
-                    if (form.generationType == "INPAINTING" || form.generationType == "OUTPAINTING") {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        val maskPickerLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.GetContent()) { uri ->
-                            viewModel.updateMaskImageUri(uri?.toString())
-                        }
-                        Text(text = "Inpainting Mask Layer", fontSize = 12.sp, color = NeonPurple, fontWeight = FontWeight.Bold)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(onClick = { maskPickerLauncher.launch("image/*") }, shape = RoundedCornerShape(6.dp)) {
-                                Icon(imageVector = Icons.Default.Brush, contentDescription = null, tint = NeonPurple, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Upload Mask Layer", fontSize = 10.sp)
-                            }
-                            OutlinedButton(onClick = { viewModel.updateMaskImageUri("assets/masks/center_subject.png") }, shape = RoundedCornerShape(6.dp)) {
-                                Text("Center Mask Preset", fontSize = 10.sp)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = "Video Resolution", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            val resList = listOf("720p", "1080p", "2K", "4K")
+                            items(resList.size) { idx ->
+                                val r = resList[idx]
+                                val isSel = form.resolution == r
+                                FilterChip(
+                                    selected = isSel,
+                                    onClick = { viewModel.updateResolution(r) },
+                                    label = { Text(r, fontSize = 10.5.sp) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = ElectricPink,
+                                        selectedLabelColor = Color.White
+                                    ),
+                                    shape = RoundedCornerShape(6.dp)
+                                )
                             }
                         }
                     }
                 }
-            }
-        }
 
-        if (requiresVideoInput) {
-            item {
-                val videoPickerLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.GetContent()) { uri ->
-                    viewModel.updateSourceVideoUri(uri?.toString())
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Aspect Ratio & Codec
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = "Aspect Ratio", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            val ratios = listOf("16:9", "9:16", "1:1", "2.39:1", "4:3")
+                            items(ratios.size) { idx ->
+                                val ratio = ratios[idx]
+                                val isSel = form.aspectRatio == ratio
+                                FilterChip(
+                                    selected = isSel,
+                                    onClick = { viewModel.updateAspectRatio(ratio) },
+                                    label = { Text(ratio, fontSize = 10.5.sp) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = NeonCyan,
+                                        selectedLabelColor = DeepDarkBg
+                                    ),
+                                    shape = RoundedCornerShape(6.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = "Video Codec", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            val codecs = listOf("H.264", "HEVC/H.265", "AV1", "VP9")
+                            items(codecs.size) { idx ->
+                                val c = codecs[idx]
+                                val isSel = form.videoCodec == c
+                                FilterChip(
+                                    selected = isSel,
+                                    onClick = { viewModel.updateVideoCodec(c) },
+                                    label = { Text(c, fontSize = 10.5.sp) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = NeonPurple,
+                                        selectedLabelColor = Color.White
+                                    ),
+                                    shape = RoundedCornerShape(6.dp)
+                                )
+                            }
+                        }
+                    }
                 }
 
-                SoraGlassCard(borderColor = NeonPurple) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(text = "Source Video File Asset", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                            Text(text = "Upload input video for AI video-to-video or upscaling", fontSize = 11.sp, color = TextSecondary)
-                        }
+                Spacer(modifier = Modifier.height(14.dp))
 
-                        OutlinedButton(
-                            onClick = { videoPickerLauncher.launch("video/*") },
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.testTag("upload_video_btn")
-                        ) {
-                            Icon(imageVector = Icons.Default.VideoFile, contentDescription = null, tint = NeonPurple, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Upload Video", fontSize = 11.sp, color = NeonPurple)
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    val vidUri = form.sourceVideoUri
-                    if (vidUri != null) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(GlassSurfaceVariant)
-                                .padding(10.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(imageVector = Icons.Default.Movie, contentDescription = null, tint = NeonPurple, modifier = Modifier.size(20.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Column {
-                                        Text(text = "Selected Source Video", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                        Text(text = vidUri, fontSize = 10.sp, color = TextSecondary)
-                                    }
-                                }
-                                IconButton(onClick = { viewModel.updateSourceVideoUri(null) }) {
-                                    Icon(imageVector = Icons.Default.Close, contentDescription = null, tint = AccentRed, modifier = Modifier.size(16.dp))
-                                }
-                            }
-                        }
-                    } else {
-                        Text(text = "Preset Sample Video Clips:", fontSize = 11.sp, color = TextSecondary)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            item {
-                                OutlinedButton(onClick = { viewModel.updateSourceVideoUri("assets/samples/drone_flight_1080p.mp4") }, shape = RoundedCornerShape(6.dp)) {
-                                    Text("Drone Flight (1080p)", fontSize = 10.sp)
-                                }
-                            }
-                            item {
-                                OutlinedButton(onClick = { viewModel.updateSourceVideoUri("assets/samples/street_walk_720p.mp4") }, shape = RoundedCornerShape(6.dp)) {
-                                    Text("Street Walk (720p)", fontSize = 10.sp)
-                                }
-                            }
+                // Camera Movement
+                Column {
+                    Text(text = "Camera Movement & Cinematography", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        val cameraMoves = listOf(
+                            "STATIC" to "📷 Static Tripod",
+                            "DYNAMIC_PAN" to "➡️ Smooth Pan L/R",
+                            "TILT_UP_DOWN" to "⬆️ Cinematic Tilt",
+                            "DOLLY_IN" to "🎯 Dolly Rush In",
+                            "DOLLY_OUT" to "🔭 Dolly Zoom Out",
+                            "ORBIT_360" to "🔄 Orbit 360°",
+                            "TRACKING_SHOT" to "🏃 Dynamic Tracking",
+                            "HANDHELD" to "📹 Raw Handheld",
+                            "DRONE_SWEEP" to "🛸 Drone Aerial Sweep"
+                        )
+                        items(cameraMoves.size) { i ->
+                            val (key, label) = cameraMoves[i]
+                            val isSelected = form.cameraMotion == key
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { viewModel.updateCameraMotion(key) },
+                                label = { Text(label, fontSize = 11.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = NeonCyan,
+                                    selectedLabelColor = DeepDarkBg
+                                ),
+                                shape = RoundedCornerShape(8.dp)
+                            )
                         }
                     }
+                }
 
-                    Spacer(modifier = Modifier.height(10.dp))
-                    val editorProject by viewModel.editorProject.collectAsState()
+                Spacer(modifier = Modifier.height(12.dp))
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(imageVector = Icons.Default.CleaningServices, contentDescription = null, tint = ElectricPink, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(text = "Auto-Erase Watermarks on Upload", fontSize = 12.sp, color = TextPrimary)
+                // Motion Strength & Temporal Consistency Sliders
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(text = "Motion Intensity", fontSize = 12.sp, color = TextSecondary)
+                            Text(text = "${(form.motionStrength * 100).toInt()}%", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = NeonCyan)
                         }
-                        Switch(
-                            checked = editorProject.globalWatermarkEraser,
-                            onCheckedChange = { viewModel.toggleGlobalWatermarkEraser(it) },
-                            colors = SwitchDefaults.colors(checkedThumbColor = ElectricPink, checkedTrackColor = ElectricPink.copy(alpha = 0.4f)),
-                            modifier = Modifier.testTag("gen_watermark_eraser_switch")
+                        Slider(
+                            value = form.motionStrength,
+                            onValueChange = { viewModel.updateMotionStrength(it) },
+                            valueRange = 0.1f..1.0f,
+                            colors = SliderDefaults.colors(thumbColor = NeonCyan, activeTrackColor = NeonCyan)
+                        )
+                    }
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(text = "Temporal Stability", fontSize = 12.sp, color = TextSecondary)
+                            Text(text = "${(form.temporalConsistency * 100).toInt()}%", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = NeonPurple)
+                        }
+                        Slider(
+                            value = form.temporalConsistency,
+                            onValueChange = { viewModel.updateTemporalConsistency(it) },
+                            valueRange = 0.2f..1.0f,
+                            colors = SliderDefaults.colors(thumbColor = NeonPurple, activeTrackColor = NeonPurple)
                         )
                     }
                 }
             }
         }
 
-        if (requiresAudioInput) {
-            item {
-                val audioPickerLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.GetContent()) { uri ->
-                    viewModel.updateSourceAudioUri(uri?.toString())
-                }
-
-                SoraGlassCard(borderColor = ElectricPink) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(text = "Source Voice / Audio Asset", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                            Text(text = "Upload audio specimen for voice cloning, subtitles, or lip sync", fontSize = 11.sp, color = TextSecondary)
-                        }
-
-                        OutlinedButton(
-                            onClick = { audioPickerLauncher.launch("audio/*") },
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.testTag("upload_audio_btn")
-                        ) {
-                            Icon(imageVector = Icons.Default.AudioFile, contentDescription = null, tint = ElectricPink, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Upload Audio", fontSize = 11.sp, color = ElectricPink)
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    val audUri = form.sourceAudioUri
-                    if (audUri != null) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(GlassSurfaceVariant)
-                                .padding(10.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(imageVector = Icons.Default.Mic, contentDescription = null, tint = ElectricPink, modifier = Modifier.size(20.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Column {
-                                        Text(text = "Selected Voice Audio Sample", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                        Text(text = audUri, fontSize = 10.sp, color = TextSecondary)
-                                    }
-                                }
-                                IconButton(onClick = { viewModel.updateSourceAudioUri(null) }) {
-                                    Icon(imageVector = Icons.Default.Close, contentDescription = null, tint = AccentRed, modifier = Modifier.size(16.dp))
-                                }
-                            }
-                        }
-                    } else {
-                        Text(text = "Preset Sample Voice Audio:", fontSize = 11.sp, color = TextSecondary)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            item {
-                                OutlinedButton(onClick = { viewModel.updateSourceAudioUri("assets/samples/voice_specimen_a.wav") }, shape = RoundedCornerShape(6.dp)) {
-                                    Text("Voice Specimen A (WAV)", fontSize = 10.sp)
-                                }
-                            }
-                            item {
-                                OutlinedButton(onClick = { viewModel.updateSourceAudioUri("assets/samples/narration_en.mp3") }, shape = RoundedCornerShape(6.dp)) {
-                                    Text("Narration English (MP3)", fontSize = 10.sp)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if (requiresCharacterInput) {
-            item {
-                SoraGlassCard(borderColor = AccentGreen) {
-                    Text(text = "Character Profile & Lore Context", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(text = "Provide persona, appearance, traits, and background lore for story generation.", fontSize = 11.sp, color = TextSecondary)
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = form.characterProfileText ?: "",
-                        onValueChange = { viewModel.updateCharacterProfileText(it) },
-                        placeholder = { Text("e.g. Captain Vance, 34-year-old shuttle pilot with cybernetic left eye...") },
-                        modifier = Modifier.fillMaxWidth().height(80.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = AccentGreen,
-                            unfocusedBorderColor = GlassSurfaceVariant
-                        ),
-                        shape = RoundedCornerShape(8.dp)
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Text(text = "Character Archetype Presets:", fontSize = 11.sp, color = TextSecondary)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        item {
-                            OutlinedButton(onClick = { viewModel.updateCharacterProfileText("Cyberpunk Hacker: Female, neon hair, wearing augmented reality visor, expert stealth coder.") }, shape = RoundedCornerShape(6.dp)) {
-                                Text("Cyberpunk Hacker", fontSize = 10.sp)
-                            }
-                        }
-                        item {
-                            OutlinedButton(onClick = { viewModel.updateCharacterProfileText("Sci-Fi Explorer: Male, space suit, rugged armor, dual energy sidearms, stoic commander.") }, shape = RoundedCornerShape(6.dp)) {
-                                Text("Sci-Fi Explorer", fontSize = 10.sp)
-                            }
-                        }
-                        item {
-                            OutlinedButton(onClick = { viewModel.updateCharacterProfileText("Fantasy Sorcerer: Aged mage, glowing blue robes, ancient rune staff, elemental fire spellcaster.") }, shape = RoundedCornerShape(6.dp)) {
-                                Text("Fantasy Sorcerer", fontSize = 10.sp)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        val isImageMode = form.generationType in listOf("IMAGE_GEN", "IMAGE_EDIT", "INPAINTING", "OUTPAINTING", "BG_REMOVAL")
-        val isVideoMode = form.generationType in listOf("TEXT_TO_VIDEO", "IMAGE_TO_VIDEO", "VIDEO_TO_VIDEO", "VIDEO_ENHANCE", "MOTION_TRANSFER", "LIP_SYNC")
-        val isAudioMode = form.generationType in listOf("VOICE_CLONE", "VOICE_GEN", "SUBTITLES", "TRANSLATION")
-        val isStoryMode = form.generationType in listOf("STORY_GEN", "SCRIPT_WRITER", "SCENE_BUILDER", "SHOT_PLANNER", "CHARACTER_CREATOR")
-
-        // Render Dedicated Studio UI Section
+        // 14. Advanced Cinematography Director Prompts
         item {
-            when {
-                isImageMode -> ImageGenerationStudio(viewModel = viewModel, form = form)
-                isVideoMode -> VideoGenerationStudio(viewModel = viewModel, form = form)
-                isAudioMode -> AudioGenerationStudio(viewModel = viewModel, form = form)
-                isStoryMode -> StoryGenerationStudio(viewModel = viewModel, form = form)
-                else -> VideoGenerationStudio(viewModel = viewModel, form = form)
+            SoraGlassCard(borderColor = GlassSurfaceVariant) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showAdvancedPrompts = !showAdvancedPrompts },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = if (showAdvancedPrompts) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = null,
+                            tint = NeonCyan,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(text = "Advanced Cinematography & Director Prompts", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    }
+                    Text(text = if (showAdvancedPrompts) "Hide" else "Show", fontSize = 11.sp, color = NeonCyan)
+                }
+
+                if (showAdvancedPrompts) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = form.motionPrompt,
+                            onValueChange = { viewModel.updateMotionPrompt(it) },
+                            placeholder = { Text("Motion & Action Prompt (e.g. 'Fast martial arts strike with cape flutter')", fontSize = 11.sp, color = TextSecondary) },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = NeonCyan,
+                                unfocusedBorderColor = GlassSurfaceVariant
+                            )
+                        )
+
+                        OutlinedTextField(
+                            value = form.cameraPrompt,
+                            onValueChange = { viewModel.updateCameraPrompt(it) },
+                            placeholder = { Text("Camera & Lens Prompt (e.g. '35mm anamorphic wide angle, rack focus')", fontSize = 11.sp, color = TextSecondary) },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = NeonCyan,
+                                unfocusedBorderColor = GlassSurfaceVariant
+                            )
+                        )
+
+                        OutlinedTextField(
+                            value = form.lightingPrompt,
+                            onValueChange = { viewModel.updateLightingPrompt(it) },
+                            placeholder = { Text("Lighting & Atmosphere (e.g. 'Volumetric god rays, neon rim lighting')", fontSize = 11.sp, color = TextSecondary) },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = NeonCyan,
+                                unfocusedBorderColor = GlassSurfaceVariant
+                            )
+                        )
+                    }
+                }
             }
         }
 
-        // Launch & Queue Action Buttons
+        // 15. Launch & Queue Action Buttons
         item {
             Spacer(modifier = Modifier.height(8.dp))
             SoraGradientButton(
@@ -839,7 +1324,7 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
             if (form.isGenerating) {
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "💡 Engine is actively running in background. Tapping Generate adds this configuration immediately to the background execution pipeline so you can queue multiple tasks and leave the app safely.",
+                    text = "💡 Engine is actively rendering in background. Tapping Generate adds this video to the background queue so you can safely switch tabs or close the screen.",
                     fontSize = 10.5.sp,
                     color = AccentGreen
                 )
@@ -874,9 +1359,9 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
                 }
             }
         }
-
     }
 
+    // Batch Job Creator Dialog
     if (showBatchDialog) {
         BatchJobCreatorDialog(
             onDismiss = { showBatchDialog = false },
@@ -886,10 +1371,55 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
             }
         )
     }
+
+    // Script Import & Converter Dialog
+    if (showScriptImportDialog) {
+        ScriptImportModalDialog(
+            onDismiss = { showScriptImportDialog = false },
+            onImportScript = { title, content ->
+                viewModel.updateTitle(title)
+                viewModel.updateGenerationType("SCRIPT_TO_VIDEO")
+                // Parse script into video scenes
+                val lines = content.split("\n").filter { it.isNotBlank() }
+                val parsed = if (lines.size >= 2) {
+                    lines.chunked(maxOf(1, lines.size / 3)).mapIndexed { idx, chunk ->
+                        ScriptScene(
+                            sceneNumber = idx + 1,
+                            title = "Scene ${idx + 1}",
+                            voiceover = chunk.joinToString(" "),
+                            visualDescription = "Cinematic rendering of ${chunk.firstOrNull()?.take(60) ?: "scene"}",
+                            imagePrompt = "Cinematic visualization, 8k",
+                            videoPrompt = "Dynamic cinematic shot: ${chunk.joinToString(" ").take(100)}",
+                            cameraMovement = if (idx % 2 == 0) "Slow Forward Dolly" else "Smooth Pan Right",
+                            lighting = "Cinematic volumetric lighting",
+                            durationSeconds = 5
+                        )
+                    }
+                } else {
+                    listOf(
+                        ScriptScene(
+                            sceneNumber = 1,
+                            title = "Scene 1",
+                            voiceover = content,
+                            visualDescription = "Visual representation of $title",
+                            imagePrompt = "Cinematic scene, 8k",
+                            videoPrompt = content.take(120),
+                            cameraMovement = "Dynamic Pan",
+                            lighting = "Cinematic lighting",
+                            durationSeconds = 10
+                        )
+                    )
+                }
+                scriptScenes = parsed
+                showScenePlanner = true
+                showScriptImportDialog = false
+            }
+        )
+    }
 }
 
 @Composable
-fun TypeChip(label: String, typeKey: String, selectedType: String, onClick: () -> Unit) {
+fun VideoTypeChip(label: String, typeKey: String, selectedType: String, onClick: () -> Unit) {
     val isSelected = typeKey == selectedType
     Box(
         modifier = Modifier
@@ -909,7 +1439,7 @@ fun TypeChip(label: String, typeKey: String, selectedType: String, onClick: () -
 }
 
 @Composable
-fun QualityModeCard(
+fun VideoQualityModeCard(
     title: String,
     desc: String,
     modeKey: String,
@@ -936,358 +1466,184 @@ fun QualityModeCard(
 }
 
 @Composable
-fun DurationChip(label: String, sec: Int, selectedSec: Int, onClick: () -> Unit) {
-    val isSelected = sec == selectedSec
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(if (isSelected) NeonPurple else GlassSurface)
-            .clickable { onClick() }
-            .padding(horizontal = 8.dp, vertical = 4.dp)
-    ) {
-        Text(text = label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (isSelected) TextPrimary else TextSecondary)
-    }
-}
-
-@Composable
-fun ResolutionChip(label: String, selectedRes: String, onClick: () -> Unit) {
-    val isSelected = label == selectedRes
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(if (isSelected) NeonCyan else GlassSurface)
-            .clickable { onClick() }
-            .padding(horizontal = 8.dp, vertical = 4.dp)
-    ) {
-        Text(text = label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (isSelected) DeepDarkBg else TextSecondary)
-    }
-}
-
-@Composable
-fun ManhwaRecapStudioSection(
-    viewModel: SoraMainViewModel,
-    form: com.example.ui.GenerationFormState
+fun ScenePlanItemCard(
+    scene: ScriptScene,
+    index: Int,
+    onUpdatePrompt: (String) -> Unit,
+    onUpdateDuration: (Int) -> Unit
 ) {
-    val panelPickerLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) {
-            viewModel.addManhwaPanel(
-                title = "Uploaded Panel ${form.manhwaPanels.size + 1}",
-                panelType = "COMBAT",
-                actionDesc = "Dynamic action panel imported from gallery",
-                spokenDialogue = "Character dialogue",
-                imageUri = uri.toString()
-            )
-        }
-    }
+    var expanded by remember { mutableStateOf(false) }
 
-    val audioPickerLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) {
-            viewModel.updateManhwaVoiceoverUri(uri.toString())
-        }
-    }
-
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        // Studio Title Header & Style Selector
-        SoraGlassCard(borderColor = ElectricPink) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(imageVector = Icons.Default.MovieFilter, contentDescription = null, tint = ElectricPink, modifier = Modifier.size(24.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Column {
-                    Text(text = "🔥 Manhwa Recap Studio", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    Text(text = "Auto-animate panels, lip sync, filter redundant narration & continue stories", fontSize = 11.sp, color = TextSecondary)
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            OutlinedTextField(
-                value = form.manhwaChapterTitle,
-                onValueChange = { viewModel.updateManhwaChapterTitle(it) },
-                label = { Text("Manhwa Title & Chapter") },
-                modifier = Modifier.fillMaxWidth().testTag("manhwa_chapter_title_input"),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = ElectricPink,
-                    unfocusedBorderColor = GlassSurfaceVariant,
-                    focusedLabelColor = ElectricPink,
-                    unfocusedLabelColor = TextSecondary
-                ),
-                shape = RoundedCornerShape(10.dp)
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Text(text = "Panel Animation & Motion Style:", fontSize = 11.sp, color = TextSecondary)
-            Spacer(modifier = Modifier.height(4.dp))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                item { TypeChip("Cinematic Flow", "MANHWA_CINEMATIC_FLOW", form.manhwaAnimationStyle) { viewModel.updateManhwaAnimationStyle("MANHWA_CINEMATIC_FLOW") } }
-                item { TypeChip("Speed Lines & FX", "ANIME_SPEED_LINES", form.manhwaAnimationStyle) { viewModel.updateManhwaAnimationStyle("ANIME_SPEED_LINES") } }
-                item { TypeChip("3D Parallax Zoom", "3D_PARALLAX_ZOOM", form.manhwaAnimationStyle) { viewModel.updateManhwaAnimationStyle("3D_PARALLAX_ZOOM") } }
-                item { TypeChip("Dynamic Action", "DYNAMIC_ACTION", form.manhwaAnimationStyle) { viewModel.updateManhwaAnimationStyle("DYNAMIC_ACTION") } }
-            }
-        }
-
-        // Section 1: Upload Manhwa Panels & Voice Cover Audio
-        SoraGlassCard(borderColor = NeonCyan) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text(text = "1. Manhwa Panels & Voice Cover Tracks", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    Text(text = "${form.manhwaPanels.size} Panels loaded • Voice Cover attached", fontSize = 11.sp, color = TextSecondary)
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Button(
-                        onClick = { panelPickerLauncher.launch("image/*") },
-                        colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.testTag("upload_panel_btn")
-                    ) {
-                        Icon(imageVector = Icons.Default.AddPhotoAlternate, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Add Panel", fontSize = 11.sp, color = Color.Black)
-                    }
-                    OutlinedButton(
-                        onClick = { audioPickerLauncher.launch("audio/*") },
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.testTag("upload_voiceover_btn")
-                    ) {
-                        Icon(imageVector = Icons.Default.GraphicEq, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Voice Cover", fontSize = 11.sp, color = NeonCyan)
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Audio Track Preview Card
-            val voiceUri = form.manhwaVoiceoverUri
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(GlassSurfaceVariant)
-                    .padding(10.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(imageVector = Icons.Default.Audiotrack, contentDescription = null, tint = ElectricPink, modifier = Modifier.size(20.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text(text = "Voiceover Track: ${voiceUri?.substringAfterLast("/") ?: "narrator_dub.mp3"}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                            Text(text = "Duration: 04:20 • Sync mode: Auto Panel Timing", fontSize = 10.sp, color = TextSecondary)
-                        }
-                    }
-                    SoraBadge(text = "AUDIO LOADED", color = ElectricPink)
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Text(text = "Uploaded Comic Panels (${form.manhwaPanels.size}):", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
-            Spacer(modifier = Modifier.height(6.dp))
-
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                form.manhwaPanels.forEachIndexed { idx, panel ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .border(1.dp, GlassSurfaceVariant, RoundedCornerShape(8.dp))
-                            .background(GlassSurface)
-                            .padding(10.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                modifier = Modifier.weight(1f),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(imageVector = Icons.Default.Image, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(20.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Column {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(text = panel.title, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        SoraBadge(
-                                            text = panel.panelType,
-                                            color = when(panel.panelType) {
-                                                "COMBAT" -> AccentRed
-                                                "DIALOGUE" -> NeonCyan
-                                                else -> NeonPurple
-                                            }
-                                        )
-                                    }
-                                    Text(text = "Action: ${panel.actionDescription}", fontSize = 10.sp, color = TextSecondary)
-                                    if (!panel.spokenDialogue.isNullOrBlank()) {
-                                        Text(text = "💬 Speech: \"${panel.spokenDialogue}\"", fontSize = 10.sp, color = ElectricPink)
-                                    }
-                                }
-                            }
-                            IconButton(onClick = { viewModel.removeManhwaPanel(panel.id) }) {
-                                Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete Panel", tint = AccentRed, modifier = Modifier.size(16.dp))
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Section 2: AI Lip Sync & Smart Action Voiceover Removal Engine
-        SoraGlassCard(borderColor = NeonPurple) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(imageVector = Icons.Default.Tune, contentDescription = null, tint = NeonPurple, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(text = "2. AI Auto-Animation, Lip Sync & Audio Filter Engine", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Switch 1: Smart Action Voiceover Removal
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(text = "Remove Redundant Spoken Action Narration", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    Text(
-                        text = "AI automatically mutes narrator action phrases once rendered on screen (e.g. 'he slashes with shadow blades'). Keeps character speech with lip-sync and action SFX/noises.",
-                        fontSize = 11.sp,
-                        color = TextSecondary
-                    )
-                }
-                Switch(
-                    checked = form.manhwaFilterActionNarration,
-                    onCheckedChange = { viewModel.toggleManhwaAudioFilter(it) },
-                    colors = SwitchDefaults.colors(checkedThumbColor = NeonCyan, checkedTrackColor = NeonCyan.copy(alpha = 0.4f)),
-                    modifier = Modifier.testTag("action_audio_filter_switch")
-                )
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Switch 2: Lip Syncing
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(text = "AI Character Lip-Sync Engine", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    Text(text = "Animates facial expressions & mouth movements of characters in panels in sync with dialogue.", fontSize = 11.sp, color = TextSecondary)
-                }
-                Switch(
-                    checked = form.manhwaLipSyncEnabled,
-                    onCheckedChange = { viewModel.toggleManhwaLipSync(it) },
-                    colors = SwitchDefaults.colors(checkedThumbColor = ElectricPink, checkedTrackColor = ElectricPink.copy(alpha = 0.4f)),
-                    modifier = Modifier.testTag("lip_sync_switch")
-                )
-            }
-        }
-
-        // Section 3: Resume Recap Progress Checkpoint
-        SoraGlassCard(borderColor = AccentGreen) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(GlassSurface)
+            .border(1.dp, GlassSurfaceVariant, RoundedCornerShape(10.dp))
+            .padding(10.dp)
+    ) {
+        Column {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(imageVector = Icons.Default.Bookmark, contentDescription = null, tint = AccentGreen, modifier = Modifier.size(20.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(22.dp)
+                            .clip(CircleShape)
+                            .background(NeonPurple.copy(alpha = 0.3f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(text = "${scene.sceneNumber}", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = NeonPurple)
+                    }
                     Spacer(modifier = Modifier.width(8.dp))
-                    Column {
-                        Text(text = "3. Auto-Saved Checkpoint (Resume Recap)", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                        Text(text = "Paused at Panel ${form.manhwaCheckpointPanelIndex + 1} / ${form.manhwaPanels.size} • Time: 02:25s", fontSize = 11.sp, color = TextSecondary)
+                    Text(text = scene.title, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SoraBadge(text = "${scene.durationSeconds}s", color = NeonCyan)
+                    IconButton(onClick = { expanded = !expanded }) {
+                        Icon(
+                            imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = null,
+                            tint = TextSecondary,
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
                 }
-
-                Button(
-                    onClick = { viewModel.resumeManhwaRecapFromCheckpoint() },
-                    colors = ButtonDefaults.buttonColors(containerColor = AccentGreen),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.testTag("resume_recap_checkpoint_btn")
-                ) {
-                    Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Resume Recap", fontSize = 11.sp, color = Color.Black)
-                }
             }
-        }
-
-        // Section 4: AI Story Continuation Generator
-        SoraGlassCard(borderColor = ElectricPink) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null, tint = ElectricPink, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(text = "4. AI Story Continuation Generator", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "Generate original chapter story continuations beyond where the manhwa ended. AI writes continuation scripts, designs panel action prompts, and appends new panels automatically.",
+                text = "🎙️ \"${scene.voiceover}\"",
                 fontSize = 11.sp,
-                color = TextSecondary
+                color = TextSecondary,
+                maxLines = if (expanded) 10 else 1,
+                overflow = TextOverflow.Ellipsis
             )
 
-            Spacer(modifier = Modifier.height(10.dp))
+            if (expanded) {
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = scene.videoPrompt,
+                    onValueChange = { onUpdatePrompt(it) },
+                    label = { Text("Video Prompt for Scene ${scene.sceneNumber}", fontSize = 10.sp) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = NeonCyan,
+                        unfocusedBorderColor = GlassSurfaceVariant
+                    )
+                )
 
-            OutlinedTextField(
-                value = form.manhwaContinuationPrompt,
-                onValueChange = { viewModel.updateManhwaContinuationPrompt(it) },
-                label = { Text("Story Continuation Prompt") },
-                modifier = Modifier.fillMaxWidth().testTag("continuation_prompt_input"),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = ElectricPink,
-                    unfocusedBorderColor = GlassSurfaceVariant,
-                    focusedLabelColor = ElectricPink,
-                    unfocusedLabelColor = TextSecondary
-                ),
-                shape = RoundedCornerShape(10.dp)
-            )
+                Spacer(modifier = Modifier.height(6.dp))
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Button(
-                onClick = { viewModel.generateManhwaStoryContinuation() },
-                colors = ButtonDefaults.buttonColors(containerColor = ElectricPink),
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.fillMaxWidth().testTag("generate_continuation_btn")
-            ) {
-                if (form.isGeneratingManhwaContinuation) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Writing Chapter Continuation...", fontSize = 12.sp)
-                } else {
-                    Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("✨ Generate Story Continuation & Append Panels", fontSize = 12.sp, color = Color.White)
-                }
-            }
-
-            val contScript = form.manhwaContinuationScript
-            if (!contScript.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(GlassSurfaceVariant)
-                        .padding(12.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(text = contScript, fontSize = 11.sp, color = TextPrimary, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                    Text(text = "Camera: ${scene.cameraMovement}", fontSize = 10.5.sp, color = NeonPurple)
+                    Text(text = "Lighting: ${scene.lighting}", fontSize = 10.5.sp, color = NeonCyan)
                 }
             }
         }
     }
+}
+
+@Composable
+fun ScriptImportModalDialog(
+    onDismiss: () -> Unit,
+    onImportScript: (title: String, content: String) -> Unit
+) {
+    var title by remember { mutableStateOf("Cybernetic Singularity") }
+    var scriptContent by remember {
+        mutableStateOf(
+            "Scene 1: Introduction to high-tech neural network computing.\n" +
+            "Scene 2: Quantum core acceleration and real-time ray-traced dynamics.\n" +
+            "Scene 3: The arrival of autonomous creative synthesis agents across the globe."
+        )
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(imageVector = Icons.Default.ImportContacts, contentDescription = null, tint = NeonPurple, modifier = Modifier.size(22.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Import Script to Video Studio", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "Select a preset or paste script text to automatically convert into timed video scenes.",
+                    fontSize = 12.sp,
+                    color = TextSecondary
+                )
+
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("Script Project Title") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp)
+                )
+
+                OutlinedTextField(
+                    value = scriptContent,
+                    onValueChange = { scriptContent = it },
+                    label = { Text("Script Content") },
+                    modifier = Modifier.fillMaxWidth().height(140.dp),
+                    shape = RoundedCornerShape(8.dp)
+                )
+
+                // Quick preset buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            title = "Cyberpunk Neo-Tokyo Chase"
+                            scriptContent = "Scene 1: Rain-slicked asphalt reflecting neon signs as hoverbikes race through the underpass.\nScene 2: The lead rider activates optical camouflage while weaving between autonomous drones.\nScene 3: A sweeping crane shot reveals the sprawling neon skyline of sector 9."
+                        },
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                    ) {
+                        Text("Cyberpunk Sample", fontSize = 10.sp)
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            title = "Deep Space Exoplanet Discovery"
+                            scriptContent = "Scene 1: The exploratory vessel drops out of hyperspace before a bioluminescent ringed planet.\nScene 2: Atmospheric probe descent through swirling emerald clouds into an ancient crystalline valley.\nScene 3: First contact with floating geometric monolithic ruins."
+                        },
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                    ) {
+                        Text("Sci-Fi Sample", fontSize = 10.sp)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onImportScript(title, scriptContent) },
+                colors = ButtonDefaults.buttonColors(containerColor = NeonPurple),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("Convert Script to Video", color = DeepDarkBg, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = onDismiss, shape = RoundedCornerShape(8.dp)) {
+                Text("Cancel")
+            }
+        },
+        containerColor = DeepDarkBg,
+        shape = RoundedCornerShape(14.dp)
+    )
 }

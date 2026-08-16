@@ -132,3 +132,67 @@ interface QuantizationHistoryDao {
     suspend fun clearAllHistory()
 }
 
+@Dao
+interface StoryProjectDao {
+    @Query("SELECT * FROM story_projects ORDER BY updatedAt DESC")
+    fun getAllStoryProjects(): Flow<List<StoryProjectEntity>>
+
+    @Query("SELECT * FROM story_projects WHERE id = :id LIMIT 1")
+    suspend fun getStoryProjectById(id: String): StoryProjectEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertStoryProject(project: StoryProjectEntity)
+
+    @Update
+    suspend fun updateStoryProject(project: StoryProjectEntity)
+
+    @Delete
+    suspend fun deleteStoryProject(project: StoryProjectEntity)
+
+    @Query("DELETE FROM story_projects WHERE id = :id")
+    suspend fun deleteStoryProjectById(id: String)
+}
+
+@Dao
+interface ScriptProjectDao {
+    @Query("SELECT * FROM script_projects ORDER BY updatedAt DESC")
+    fun getAllScriptProjects(): Flow<List<ScriptProjectEntity>>
+
+    @Query("SELECT * FROM script_projects WHERE id = :id LIMIT 1")
+    suspend fun getScriptProjectById(id: String): ScriptProjectEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertScriptProject(project: ScriptProjectEntity)
+
+    @Update
+    suspend fun updateScriptProject(project: ScriptProjectEntity)
+
+    @Delete
+    suspend fun deleteScriptProject(project: ScriptProjectEntity)
+
+    @Query("DELETE FROM script_projects WHERE id = :id")
+    suspend fun deleteScriptProjectById(id: String)
+}
+
+@Dao
+interface GenerationLogDao {
+    @Query("SELECT * FROM generation_logs WHERE projectId = :projectId ORDER BY timestamp DESC")
+    fun getLogsForProject(projectId: String): Flow<List<GenerationLogEntity>>
+
+    @Query("SELECT * FROM generation_logs WHERE projectType = :projectType ORDER BY timestamp DESC")
+    fun getLogsByType(projectType: String): Flow<List<GenerationLogEntity>>
+
+    @Query("SELECT * FROM generation_logs ORDER BY timestamp DESC")
+    fun getAllLogs(): Flow<List<GenerationLogEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertLog(log: GenerationLogEntity)
+
+    @Query("DELETE FROM generation_logs WHERE projectId = :projectId")
+    suspend fun deleteLogsForProject(projectId: String)
+
+    @Query("DELETE FROM generation_logs")
+    suspend fun clearAllLogs()
+}
+
+

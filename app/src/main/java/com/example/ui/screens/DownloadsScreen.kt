@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -33,15 +34,21 @@ fun DownloadsScreen(viewModel: SoraMainViewModel) {
     val query by viewModel.huggingFaceQuery.collectAsState()
     val hfResults by viewModel.huggingFaceResults.collectAsState()
     val dlState by viewModel.downloadingState.collectAsState()
+    val storageVolumes by viewModel.storageVolumes.collectAsState()
 
     var modelToDownload by remember { mutableStateOf<HuggingFaceModelInfo?>(null) }
     var selectedDownloadStorage by remember { mutableStateOf("INTERNAL") } // "INTERNAL", "SD_CARD", "CUSTOM"
-    var customDownloadPath by remember { mutableStateOf("/sdcard/ai_models") }
+    var customDownloadPath by remember { mutableStateOf("") }
 
+    val context = androidx.compose.ui.platform.LocalContext.current
     val folderPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
     ) { uri: Uri? ->
         uri?.let {
+            try {
+                val takeFlags: Int = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                context.contentResolver.takePersistableUriPermission(it, takeFlags)
+            } catch (_: Exception) {}
             customDownloadPath = it.toString()
             selectedDownloadStorage = "CUSTOM"
         }
@@ -187,60 +194,49 @@ fun DownloadsScreen(viewModel: SoraMainViewModel) {
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
-                        text = "Choose storage space for \"${targetModel.name}\":",
+                        text = "Choose physical storage space for \"${targetModel.name}\":",
                         fontSize = 13.sp,
                         color = TextPrimary
                     )
 
-                    // Option 1: Internal Phone Storage
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (selectedDownloadStorage == "INTERNAL") NeonCyan.copy(alpha = 0.15f) else GlassSurface)
-                            .border(1.dp, if (selectedDownloadStorage == "INTERNAL") NeonCyan else GlassSurfaceVariant, RoundedCornerShape(8.dp))
-                            .clickable { selectedDownloadStorage = "INTERNAL" }
-                            .padding(10.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(
-                                selected = selectedDownloadStorage == "INTERNAL",
-                                onClick = { selectedDownloadStorage = "INTERNAL" },
-                                colors = RadioButtonDefaults.colors(selectedColor = NeonCyan)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Column {
-                                Text(text = "📱 Phone Internal Storage", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                Text(text = "/data/user/0/.../files/ai_models (58.4 GB Free)", fontSize = 11.sp, color = TextSecondary)
+                    // Dynamically display real Android device storage volumes
+                    storageVolumes.forEach { volume ->
+                        val isSelected = selectedDownloadStorage == volume.storageType
+                        val volumeColor = if (volume.isRemovable) AccentGreen else NeonCyan
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (isSelected) volumeColor.copy(alpha = 0.15f) else GlassSurface)
+                                .border(1.dp, if (isSelected) volumeColor else GlassSurfaceVariant, RoundedCornerShape(8.dp))
+                                .clickable { selectedDownloadStorage = volume.storageType }
+                                .padding(10.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(
+                                    selected = isSelected,
+                                    onClick = { selectedDownloadStorage = volume.storageType },
+                                    colors = RadioButtonDefaults.colors(selectedColor = volumeColor)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Column {
+                                    Text(
+                                        text = "${if (volume.isRemovable) "💾" else "📱"} ${volume.name}",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextPrimary
+                                    )
+                                    Text(
+                                        text = "${String.format("%.1f", volume.freeSpaceGb)} GB Free of ${String.format("%.1f", volume.totalSpaceGb)} GB • Real Device Storage",
+                                        fontSize = 11.sp,
+                                        color = TextSecondary
+                                    )
+                                }
                             }
                         }
                     }
 
-                    // Option 2: SD Card Storage
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (selectedDownloadStorage == "SD_CARD") AccentGreen.copy(alpha = 0.15f) else GlassSurface)
-                            .border(1.dp, if (selectedDownloadStorage == "SD_CARD") AccentGreen else GlassSurfaceVariant, RoundedCornerShape(8.dp))
-                            .clickable { selectedDownloadStorage = "SD_CARD" }
-                            .padding(10.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(
-                                selected = selectedDownloadStorage == "SD_CARD",
-                                onClick = { selectedDownloadStorage = "SD_CARD" },
-                                colors = RadioButtonDefaults.colors(selectedColor = AccentGreen)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Column {
-                                Text(text = "💾 Removable SD Card Storage", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                Text(text = "/storage/sdcard/ai_models (124.8 GB Free)", fontSize = 11.sp, color = TextSecondary)
-                            }
-                        }
-                    }
-
-                    // Option 3: Custom Folder Path
+                    // Custom SAF Directory
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -259,8 +255,12 @@ fun DownloadsScreen(viewModel: SoraMainViewModel) {
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Column {
-                                    Text(text = "📂 Custom Directory Path", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                    Text(text = "Specify custom folder destination", fontSize = 11.sp, color = TextSecondary)
+                                    Text(text = "📂 Custom SAF Directory Tree", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                    Text(
+                                        text = if (customDownloadPath.isNotBlank()) customDownloadPath.takeLast(35) else "Pick Android Document Tree via SAF",
+                                        fontSize = 11.sp,
+                                        color = TextSecondary
+                                    )
                                 }
                             }
                             if (selectedDownloadStorage == "CUSTOM") {
@@ -273,6 +273,7 @@ fun DownloadsScreen(viewModel: SoraMainViewModel) {
                                         value = customDownloadPath,
                                         onValueChange = { customDownloadPath = it },
                                         modifier = Modifier.weight(1f),
+                                        placeholder = { Text("Select folder...", fontSize = 11.sp) },
                                         singleLine = true,
                                         textStyle = LocalTextStyle.current.copy(fontSize = 11.sp)
                                     )
@@ -282,7 +283,7 @@ fun DownloadsScreen(viewModel: SoraMainViewModel) {
                                         colors = ButtonDefaults.buttonColors(containerColor = NeonPurple),
                                         shape = RoundedCornerShape(8.dp)
                                     ) {
-                                        Text("Browse", fontSize = 10.sp)
+                                        Text("Select Folder", fontSize = 10.sp)
                                     }
                                 }
                             }

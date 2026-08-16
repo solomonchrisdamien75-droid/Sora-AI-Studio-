@@ -58,12 +58,38 @@ class ModelStorageScanner(
         var totalDiscovered = 0
 
         try {
-            // 1. Reconcile existing records
-            // We get models from DAO
-            val currentModels = mutableListOf<AiModelEntity>()
-            // Using a temporary flow collection or direct check
-            // Note: AiModelDao has getModelById, but we can query or let repository provide list
-            // For safety, we check standard storage directories
+            // 1. Reconcile existing records in database
+            val allDbModels = aiModelDao.getAllModelsList()
+            for (dbModel in allDbModels) {
+                if (dbModel.isDownloaded) {
+                    var fileExists = false
+                    if (!dbModel.localPath.isNullOrBlank()) {
+                        val f = File(dbModel.localPath)
+                        fileExists = f.exists() && f.length() > 0
+                    } else if (!dbModel.fileUri.isNullOrBlank()) {
+                        try {
+                            val uri = Uri.parse(dbModel.fileUri)
+                            val doc = androidx.documentfile.provider.DocumentFile.fromSingleUri(context, uri)
+                            fileExists = doc != null && doc.exists() && doc.length() > 0
+                        } catch (_: Exception) {
+                            fileExists = false
+                        }
+                    }
+
+                    if (!fileExists) {
+                        missingCount++
+                        val resetModel = dbModel.copy(
+                            isDownloaded = false,
+                            downloadState = ModelDownloadState.NOT_DOWNLOADED.name,
+                            localPath = null,
+                            fileUri = null,
+                            validationStatus = "MISSING_FROM_STORAGE"
+                        )
+                        aiModelDao.updateModel(resetModel)
+                    }
+                }
+            }
+
             val targetDirs = getStandardModelDirectories()
 
             _scanProgress.value = _scanProgress.value.copy(
