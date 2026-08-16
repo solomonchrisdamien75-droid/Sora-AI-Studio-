@@ -66,8 +66,12 @@ class MainActivity : ComponentActivity() {
                     ) {
                         when (currentTab) {
                             SoraTab.HOME -> HomeScreen(viewModel = viewModel)
+                            SoraTab.STORY_STUDIO -> com.example.ui.screens.StoryWriterScreen(viewModel = viewModel, onBack = { viewModel.selectTab(SoraTab.HOME) })
+                            SoraTab.SCRIPT_STUDIO -> com.example.ui.screens.ScriptWriterScreen(viewModel = viewModel, onBack = { viewModel.selectTab(SoraTab.HOME) })
+                            SoraTab.VOICE_AI -> com.example.ui.screens.VoiceAIScreen(viewModel = viewModel, onBack = { viewModel.selectTab(SoraTab.HOME) })
                             SoraTab.MANHWA_STUDIO -> com.example.manhwa.ui.ManhwaStudioScreen(viewModel = viewModel)
                             SoraTab.GENERATE -> GenerateScreen(viewModel = viewModel)
+                            SoraTab.IMAGE_GEN -> ImageGenScreen(viewModel = viewModel)
                             SoraTab.QUEUE -> TaskQueueScreen(viewModel = viewModel)
                             SoraTab.WAKE_WORD -> WakeWordScreen(viewModel = viewModel)
                             SoraTab.MODELS -> ModelsScreen(viewModel = viewModel)
@@ -145,8 +149,12 @@ fun SoraNavigationBar(
 fun getTabIcon(tab: SoraTab): ImageVector {
     return when (tab) {
         SoraTab.HOME -> Icons.Default.Home
+        SoraTab.STORY_STUDIO -> Icons.Default.AutoStories
+        SoraTab.SCRIPT_STUDIO -> Icons.Default.ViewStream
+        SoraTab.VOICE_AI -> Icons.Default.RecordVoiceOver
         SoraTab.MANHWA_STUDIO -> Icons.Default.AutoAwesome
         SoraTab.GENERATE -> Icons.Default.VideoCall
+        SoraTab.IMAGE_GEN -> Icons.Default.Palette
         SoraTab.QUEUE -> Icons.Default.Queue
         SoraTab.WAKE_WORD -> Icons.Default.GraphicEq
         SoraTab.MODELS -> Icons.Default.FolderZip

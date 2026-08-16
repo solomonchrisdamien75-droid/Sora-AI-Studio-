@@ -8,7 +8,10 @@ interface AiModelDao {
     @Query("SELECT * FROM ai_models ORDER BY name ASC")
     fun getAllModels(): Flow<List<AiModelEntity>>
 
-    @Query("SELECT * FROM ai_models WHERE isDownloaded = 1")
+    @Query("SELECT * FROM ai_models")
+    suspend fun getAllModelsList(): List<AiModelEntity>
+
+    @Query("SELECT * FROM ai_models WHERE isDownloaded = 1 AND downloadState = 'AVAILABLE'")
     fun getDownloadedModels(): Flow<List<AiModelEntity>>
 
     @Query("SELECT * FROM ai_models WHERE id = :id LIMIT 1")

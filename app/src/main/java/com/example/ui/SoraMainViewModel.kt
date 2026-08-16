@@ -27,8 +27,12 @@ import kotlinx.coroutines.launch
 
 enum class SoraTab(val title: String, val route: String) {
     HOME("Home", "home"),
+    STORY_STUDIO("Story Writer", "story_studio"),
+    SCRIPT_STUDIO("Script Writer", "script_studio"),
+    VOICE_AI("Voice AI", "voice_ai"),
     MANHWA_STUDIO("Manhwa Studio", "manhwa_studio"),
-    GENERATE("Generate", "generate"),
+    GENERATE("Video Studio", "generate"),
+    IMAGE_GEN("Image Studio", "image_gen"),
     QUEUE("Task Queue", "queue"),
     WAKE_WORD("Sora Voice", "wake_word"),
     MODELS("Models", "models"),
@@ -40,6 +44,27 @@ enum class SoraTab(val title: String, val route: String) {
     SORA_CLOUD("Server & Cloud", "server_cloud"),
     SETTINGS("Settings", "settings")
 }
+
+data class ImageGenerationFormState(
+    val prompt: String = "A hyperdetailed masterpiece, futuristic cyberpunk girl with glowing neon katana in rain, 8k resolution, cinematic lighting",
+    val title: String = "Cyberpunk Heroine",
+    val style: String = "PHOTOREALISTIC", // PHOTOREALISTIC, ANIME, CYBERPUNK, OCTANE_3D, FANTASY_CINEMATIC, OIL_PAINTING, CONCEPT_ART, WATERCOLOR
+    val resolution: String = "1024x1024", // 512x512, 768x768, 1024x1024, 1536x1024, 2048x2048
+    val aspectRatio: String = "1:1", // 1:1, 16:9, 9:16, 4:3, 3:2, 2:3
+    val steps: Int = 30, // 10, 20, 30, 50, 100
+    val cfgScale: Float = 7.5f,
+    val negativePrompt: String = "blurry, low quality, distorted, extra limbs, bad anatomy, artifacts, watermark, lowres, text, error",
+    val sampler: String = "Euler a", // Euler a, DPM++ 2M Karras, DDIM, UniPC, LCM Turbo
+    val seed: Long = -1L,
+    val isRandomSeed: Boolean = true,
+    val highResFix: Boolean = true,
+    val batchCount: Int = 1,
+    val sourceImageUri: String? = null,
+    val maskImageUri: String? = null,
+    val mode: String = "TEXT_TO_IMAGE", // TEXT_TO_IMAGE, IMAGE_TO_IMAGE, INPAINTING, OUTPAINTING, BACKGROUND_REMOVAL, UPSCALING
+    val isGenerating: Boolean = false,
+    val errorMessage: String? = null
+)
 
 data class ManhwaPanelItem(
     val id: String,
@@ -394,6 +419,17 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    // Unified Real AI Engines & Inference Architecture
+    val aiInferenceManager by lazy { repository.aiInferenceManager }
+    val aiJobManager by lazy { repository.aiJobManager }
+    val projectStorageManager by lazy { repository.projectStorageManager }
+    val storyEngine by lazy { repository.storyEngine }
+    val scriptEngine by lazy { repository.scriptEngine }
+    val voiceAIEngine by lazy { repository.voiceAIEngine }
+
+    // Real AI Jobs Flow from background manager
+    val unifiedJobs by lazy { aiJobManager.jobs }
+
     val allModels: StateFlow<List<AiModelEntity>> = repository.aiModelDao.getAllModels()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -438,6 +474,17 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
 
     val realtimeTelemetry: StateFlow<RealtimeTelemetryState> = repository.telemetryPerformanceMonitor.telemetryState
     val storageVolumes: List<StorageVolumeInfo> get() = repository.deviceStorageManager.getAllStorageVolumes()
+    val storageScanProgress = repository.modelStorageScanner.scanProgress
+
+    private val _imageGenerationForm = MutableStateFlow(ImageGenerationFormState())
+    val imageGenerationForm: StateFlow<ImageGenerationFormState> = _imageGenerationForm.asStateFlow()
+
+    fun scanStorageForModels() {
+        viewModelScope.launch {
+            val result = repository.modelStorageScanner.reconcileDatabaseWithStorage()
+            _settingsStatusMessage.value = "Storage Scan complete: ${result.validModelsCount} verified model(s) on device"
+        }
+    }
 
     private val _serverOperationMessage = MutableStateFlow<String?>(null)
     val serverOperationMessage: StateFlow<String?> = _serverOperationMessage.asStateFlow()
@@ -1009,57 +1056,6 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
                 return@launch
             }
 
-            // Command: Open YouTube
-            if (lower == "open youtube" || lower == "youtube" || lower.startsWith("open youtube")) {
-                launchYouTubeApp()
-                val aiMsg = ChatMessage(
-                    sender = "AI",
-                    text = "🚀 Opening YouTube application on your device...",
-                    actionType = "OPEN_YOUTUBE",
-                    actionTitle = "Open YouTube App",
-                    isExecuted = true
-                )
-                _chatMessages.value = _chatMessages.value + aiMsg
-                _isChatStreaming.value = false
-                _isAssistantLoading.value = false
-                return@launch
-            }
-
-            // Command: Set Timer
-            if (lower.startsWith("set timer") || lower.startsWith("timer ") || lower.contains("set a timer")) {
-                val minutes = when {
-                    lower.contains("1 minute") || lower.contains("1 min") -> 1
-                    lower.contains("2 minute") || lower.contains("2 min") -> 2
-                    lower.contains("3 minute") || lower.contains("3 min") -> 3
-                    lower.contains("5 minute") || lower.contains("5 min") -> 5
-                    lower.contains("10 minute") || lower.contains("10 min") -> 10
-                    lower.contains("15 minute") || lower.contains("15 min") -> 15
-                    lower.contains("30 minute") || lower.contains("30 min") -> 30
-                    lower.contains("30 second") || lower.contains("30 sec") -> 0
-                    else -> 5
-                }
-                val seconds = if (lower.contains("30 second") || lower.contains("30 sec")) 30 else minutes * 60
-                val timerTitle = if (userText.length > 25) userText.take(25) + "..." else userText
-                startTimer(timerTitle, seconds)
-
-                val timeLabel = if (seconds < 60) "$seconds seconds" else "$minutes minute(s)"
-                val aiMsg = ChatMessage(
-                    sender = "AI",
-                    text = "⏱️ Set a system timer for $timeLabel! A live countdown card is active above.",
-                    actionType = "SET_TIMER",
-                    actionTitle = "Timer Set ($timeLabel)",
-                    isExecuted = true
-                )
-                _chatMessages.value = _chatMessages.value + aiMsg
-                _isChatStreaming.value = false
-                _isAssistantLoading.value = false
-                return@launch
-            }
-
-            // Real AI Inference & Streaming Response
-            val activeModel = repository.inferenceEngineManager.activeLoadedModel.value
-            val activeEngine = repository.inferenceEngineManager.activeEngine.value ?: repository.inferenceEngineManager.llamaCppEngine
-
             // Add placeholder AI message for streaming
             val aiMsgId = java.util.UUID.randomUUID().toString()
             val initialAiMsg = ChatMessage(
@@ -1072,8 +1068,15 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
             val accumulatedText = StringBuilder()
 
             try {
-                // Stream response tokens
-                activeEngine.streamText(userText).collect { token ->
+                // Stream response from unified AIInferenceManager
+                val chatReq = com.example.ai.inference.AIInferenceRequest(
+                    prompt = userText,
+                    systemPrompt = "You are Sora AI Assistant, an advanced multimodal on-device and cloud creative intelligence. Provide direct, intelligent, well-structured assistance on video creation, story writing, script planning, sound design, and technical reasoning.",
+                    requiredCapability = com.example.ai.inference.model.ModelCapability.CHAT,
+                    temperature = 0.7f,
+                    maxTokens = 1024
+                )
+                aiInferenceManager.streamText(chatReq).collect { token ->
                     accumulatedText.append(token)
                     _chatMessages.value = _chatMessages.value.map { msg ->
                         if (msg.id == aiMsgId) msg.copy(text = accumulatedText.toString()) else msg
@@ -1081,7 +1084,7 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
                 }
             } catch (e: Exception) {
                 if (accumulatedText.isEmpty()) {
-                    val fallback = "🤖 [${activeModel?.name ?: "Sora AI Engine"}]: I received your prompt: \"$userText\". You can ask me to generate scripts, plan camera shots, analyze video concepts, set timers, or synthesize multimedia scenes."
+                    val fallback = "🤖 [${repository.inferenceEngineManager.activeLoadedModel.value?.name ?: "Sora AI Engine"}]: I received your message: \"$userText\".\n\nI can assist you with creative video synthesis, story arcs, AV script breakdowns, neural voice synthesis, and multimedia generation."
                     _chatMessages.value = _chatMessages.value.map { msg ->
                         if (msg.id == aiMsgId) msg.copy(text = fallback) else msg
                     }
@@ -1361,31 +1364,153 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
         storageSource: String,
         customDesc: String? = null
     ) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val modelId = "custom_${System.currentTimeMillis()}"
-            val entity = AiModelEntity(
-                id = modelId,
-                name = name.ifBlank { "Imported Model" },
-                modelType = modelType.ifBlank { "VIDEO" },
-                format = format.uppercase().ifBlank { "GGUF" },
-                sizeBytes = 1024L * 1024L * 1024L * 2L,
-                ramRequiredMb = ramMb.coerceAtLeast(512),
-                isDownloaded = true,
-                localPath = localPath,
-                sourceUrl = null,
-                description = customDesc ?: "Manually imported from $storageSource (${localPath.takeLast(30)})"
+        viewModelScope.launch {
+            val result = repository.modelStorageScanner.importAndValidateModel(
+                name = name,
+                format = format,
+                modelType = modelType,
+                ramMb = ramMb,
+                pathOrUri = localPath,
+                storageSource = storageSource
             )
-            repository.modelDownloadManager.importManualModel(entity)
-            _settingsStatusMessage.value = "Imported model '$name' successfully from $storageSource"
+            _settingsStatusMessage.value = result.second
         }
     }
 
     fun deleteOrUnloadModel(modelId: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            if (activeLoadedModel.value?.id == modelId) {
+            val model = repository.aiModelDao.getModelById(modelId)
+            if (model != null) {
+                if (activeLoadedModel.value?.id == modelId) {
+                    unloadActiveModel()
+                }
+                repository.modelDownloadManager.deleteModelPermanently(model)
+                _settingsStatusMessage.value = "Deleted model '${model.name}' from device"
+            } else {
+                repository.aiModelDao.deleteModelById(modelId)
+            }
+        }
+    }
+
+    fun deleteModelPermanently(model: AiModelEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (activeLoadedModel.value?.id == model.id) {
                 unloadActiveModel()
             }
-            repository.aiModelDao.deleteModelById(modelId)
+            val deleted = repository.modelDownloadManager.deleteModelPermanently(model)
+            if (deleted) {
+                _settingsStatusMessage.value = "Deleted model '${model.name}' from storage"
+            }
+        }
+    }
+
+    // Dedicated Image Studio Methods
+    fun updateDedicatedImagePrompt(prompt: String) {
+        _imageGenerationForm.value = _imageGenerationForm.value.copy(prompt = prompt)
+    }
+
+    fun updateDedicatedImageTitle(title: String) {
+        _imageGenerationForm.value = _imageGenerationForm.value.copy(title = title)
+    }
+
+    fun updateDedicatedImageStyle(style: String) {
+        _imageGenerationForm.value = _imageGenerationForm.value.copy(style = style)
+    }
+
+    fun updateDedicatedImageResolution(res: String) {
+        _imageGenerationForm.value = _imageGenerationForm.value.copy(resolution = res)
+    }
+
+    fun updateDedicatedImageAspectRatio(ratio: String) {
+        _imageGenerationForm.value = _imageGenerationForm.value.copy(aspectRatio = ratio)
+    }
+
+    fun updateDedicatedImageSteps(steps: Int) {
+        _imageGenerationForm.value = _imageGenerationForm.value.copy(steps = steps)
+    }
+
+    fun updateDedicatedImageCfgScale(scale: Float) {
+        _imageGenerationForm.value = _imageGenerationForm.value.copy(cfgScale = scale)
+    }
+
+    fun updateDedicatedImageNegativePrompt(prompt: String) {
+        _imageGenerationForm.value = _imageGenerationForm.value.copy(negativePrompt = prompt)
+    }
+
+    fun updateDedicatedImageSampler(sampler: String) {
+        _imageGenerationForm.value = _imageGenerationForm.value.copy(sampler = sampler)
+    }
+
+    fun updateDedicatedImageSeed(seed: Long) {
+        _imageGenerationForm.value = _imageGenerationForm.value.copy(seed = seed, isRandomSeed = false)
+    }
+
+    fun toggleDedicatedImageRandomSeed(random: Boolean) {
+        _imageGenerationForm.value = _imageGenerationForm.value.copy(isRandomSeed = random)
+    }
+
+    fun toggleDedicatedImageHighResFix(enabled: Boolean) {
+        _imageGenerationForm.value = _imageGenerationForm.value.copy(highResFix = enabled)
+    }
+
+    fun updateDedicatedImageBatchCount(count: Int) {
+        _imageGenerationForm.value = _imageGenerationForm.value.copy(batchCount = count)
+    }
+
+    fun updateDedicatedImageMode(mode: String) {
+        _imageGenerationForm.value = _imageGenerationForm.value.copy(mode = mode)
+    }
+
+    fun updateDedicatedImageSourceUri(uri: String?) {
+        _imageGenerationForm.value = _imageGenerationForm.value.copy(sourceImageUri = uri)
+    }
+
+    fun updateDedicatedImageMaskUri(uri: String?) {
+        _imageGenerationForm.value = _imageGenerationForm.value.copy(maskImageUri = uri)
+    }
+
+    fun startDedicatedImageGeneration() {
+        val form = _imageGenerationForm.value
+        val seedToUse = if (form.isRandomSeed) kotlin.random.Random.nextLong(1, 999999999L) else form.seed
+
+        _imageGenerationForm.value = form.copy(isGenerating = true, errorMessage = null)
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val res = repository.realMediaSynthesisEngine.generateRealImage(
+                    title = form.title.ifBlank { "AI Art ${System.currentTimeMillis() % 1000}" },
+                    prompt = form.prompt,
+                    style = form.style,
+                    aspectRatio = form.aspectRatio,
+                    resolutionLabel = form.resolution,
+                    cfgScale = form.cfgScale,
+                    steps = form.steps,
+                    seed = seedToUse
+                )
+                repository.galleryDao.insertItem(res.second)
+                _latestGeneratedResult.value = res.second
+                _settingsStatusMessage.value = "Generated artwork: ${res.second.title}"
+            } catch (e: Exception) {
+                _imageGenerationForm.value = _imageGenerationForm.value.copy(errorMessage = e.message)
+            } finally {
+                _imageGenerationForm.value = _imageGenerationForm.value.copy(isGenerating = false)
+            }
+        }
+    }
+
+    fun addDedicatedImageJobToQueue() {
+        val form = _imageGenerationForm.value
+        viewModelScope.launch {
+            repository.taskQueueManager.enqueueSingleJob(
+                title = form.title,
+                prompt = form.prompt,
+                generationType = form.mode,
+                mode = "FAST",
+                durationSec = 1,
+                resolution = form.resolution,
+                fps = 1
+            )
+            _settingsStatusMessage.value = "Enqueued image task '${form.title}' to queue"
         }
     }
 

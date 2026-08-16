@@ -11,8 +11,17 @@ data class AiModelEntity(
     val format: String, // GGUF, SAFETENSORS, LITERET, ONNX, MNN, NCNN
     val sizeBytes: Long,
     val ramRequiredMb: Int,
-    val isDownloaded: Boolean,
+    val isDownloaded: Boolean = false,
+    val downloadState: String = "NOT_DOWNLOADED", // NOT_DOWNLOADED, QUEUED, DOWNLOADING, AVAILABLE, MISSING, INVALID, FAILED
+    val storageLocation: String = "INTERNAL", // INTERNAL, SD_CARD, CUSTOM, SAF_URI
     val localPath: String? = null,
+    val fileUri: String? = null,
+    val checksum: String? = null,
+    val lastVerified: Long = 0L,
+    val validationStatus: String = "UNVERIFIED", // VALID, MISSING_FILE, ZERO_BYTE_FILE, UNREADABLE, UNVERIFIED
+    val architecture: String? = null,
+    val backend: String? = null,
+    val quantization: String? = null,
     val sourceUrl: String? = null,
     val description: String = "",
     val version: String = "1.0",

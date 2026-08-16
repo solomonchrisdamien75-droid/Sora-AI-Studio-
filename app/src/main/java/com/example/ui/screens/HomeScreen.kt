@@ -186,42 +186,86 @@ fun HomeScreen(viewModel: SoraMainViewModel) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 QuickActionCard(
-                    title = "Workbench",
-                    icon = Icons.Default.VideoCall,
+                    title = "Story Writer",
+                    icon = Icons.Default.AutoStories,
                     color = NeonCyan,
-                    modifier = Modifier.weight(1f).testTag("quick_text_to_video"),
+                    modifier = Modifier.weight(1f).testTag("quick_story_writer"),
+                    onClick = {
+                        viewModel.selectTab(SoraTab.STORY_STUDIO)
+                    }
+                )
+                QuickActionCard(
+                    title = "Script Studio",
+                    icon = Icons.Default.ViewStream,
+                    color = NeonPurple,
+                    modifier = Modifier.weight(1f).testTag("quick_script_writer"),
+                    onClick = {
+                        viewModel.selectTab(SoraTab.SCRIPT_STUDIO)
+                    }
+                )
+                QuickActionCard(
+                    title = "Voice AI",
+                    icon = Icons.Default.RecordVoiceOver,
+                    color = AccentGreen,
+                    modifier = Modifier.weight(1f).testTag("quick_voice_ai"),
+                    onClick = {
+                        viewModel.selectTab(SoraTab.VOICE_AI)
+                    }
+                )
+                QuickActionCard(
+                    title = "Video Studio",
+                    icon = Icons.Default.VideoCall,
+                    color = ElectricPink,
+                    modifier = Modifier.weight(1f).testTag("quick_video_studio"),
                     onClick = {
                         viewModel.updateGenerationType("TEXT_TO_VIDEO")
                         viewModel.selectTab(SoraTab.GENERATE)
                     }
                 )
-                QuickActionCard(
-                    title = "Task Queue",
-                    icon = Icons.Default.Queue,
-                    color = AccentGreen,
-                    modifier = Modifier.weight(1f).testTag("quick_task_queue"),
-                    onClick = {
-                        viewModel.selectTab(SoraTab.QUEUE)
+            }
+        }
+
+        // Dedicated Featured Banner for Story & Script Production Pipeline
+        item {
+            SoraGlassCard(borderColor = NeonCyan) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            SoraBadge(text = "CREATIVE PIPELINE", color = NeonCyan)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = "📖 Story & Script Production Studio", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Write multi-chapter novels with rolling continuity, create Audio/Visual production scripts, synthesize neural voiceovers, and send directly to the Video Generator!",
+                            fontSize = 12.sp,
+                            color = TextSecondary
+                        )
                     }
-                )
-                QuickActionCard(
-                    title = "Manhwa Studio",
-                    icon = Icons.Default.MovieFilter,
-                    color = ElectricPink,
-                    modifier = Modifier.weight(1f).testTag("quick_manhwa_recap"),
-                    onClick = {
-                        viewModel.selectTab(SoraTab.MANHWA_STUDIO)
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Button(
+                            onClick = { viewModel.selectTab(SoraTab.STORY_STUDIO) },
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.testTag("launch_story_studio_btn")
+                        ) {
+                            Text("Story Writer", fontSize = 11.sp, color = DeepDarkBg, fontWeight = FontWeight.Bold)
+                        }
+                        Button(
+                            onClick = { viewModel.selectTab(SoraTab.SCRIPT_STUDIO) },
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonPurple),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.testTag("launch_script_studio_btn")
+                        ) {
+                            Text("Script Writer", fontSize = 11.sp, color = TextPrimary, fontWeight = FontWeight.Bold)
+                        }
                     }
-                )
-                QuickActionCard(
-                    title = "Assistant",
-                    icon = Icons.Default.Psychology,
-                    color = NeonPurple,
-                    modifier = Modifier.weight(1f).testTag("quick_assistant"),
-                    onClick = {
-                        viewModel.selectTab(SoraTab.ASSISTANT)
-                    }
-                )
+                }
             }
         }
 

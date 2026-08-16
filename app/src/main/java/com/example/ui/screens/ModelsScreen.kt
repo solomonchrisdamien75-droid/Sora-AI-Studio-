@@ -182,6 +182,67 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
                 }
             }
 
+            // Storage Verification & Physical File Integrity Banner
+            item {
+                val scanState by viewModel.storageScanProgress.collectAsState()
+                SoraGlassCard(borderColor = if (downloadedModels.isEmpty()) TextSecondary.copy(alpha = 0.4f) else AccentGreen) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = if (downloadedModels.isNotEmpty()) Icons.Default.Verified else Icons.Default.FolderOpen,
+                                    contentDescription = null,
+                                    tint = if (downloadedModels.isNotEmpty()) AccentGreen else TextSecondary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        text = "Physical Storage Integrity",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextPrimary
+                                    )
+                                    Text(
+                                        text = "Verified on disk: ${downloadedModels.size} model(s) • Magic-bytes verified",
+                                        fontSize = 11.sp,
+                                        color = if (downloadedModels.isNotEmpty()) AccentGreen else TextSecondary
+                                    )
+                                }
+                            }
+                            Button(
+                                onClick = { viewModel.scanStorageForModels() },
+                                colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                enabled = !scanState.isScanning
+                            ) {
+                                if (scanState.isScanning) {
+                                    CircularProgressIndicator(color = DeepDarkBg, modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Scanning...", fontSize = 11.sp, color = DeepDarkBg, fontWeight = FontWeight.Bold)
+                                } else {
+                                    Icon(imageVector = Icons.Default.Sync, contentDescription = null, tint = DeepDarkBg, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Verify Storage", fontSize = 11.sp, color = DeepDarkBg, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                        if (scanState.isScanning) {
+                            LinearProgressIndicator(
+                                modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                                color = NeonCyan,
+                                trackColor = GlassSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
             // Main Screen Section Selector Tabs (Models / History / Memory Pool)
             item {
                 Row(
@@ -648,6 +709,21 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(text = model.name, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                                 Text(text = model.description, fontSize = 11.sp, color = TextSecondary)
+
+                                if (model.isDownloaded && model.localPath != null) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "📁 ${model.storageLocation} • ${String.format("%.1f", model.sizeBytes / (1024f * 1024f))} MB • Verified Magic Bytes",
+                                        fontSize = 10.sp,
+                                        color = AccentGreen
+                                    )
+                                    Text(
+                                        text = model.localPath?.takeLast(40) ?: "",
+                                        fontSize = 9.sp,
+                                        color = TextSecondary,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
                             }
 
                             if (model.isDownloaded) {
@@ -655,6 +731,18 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
+                                    IconButton(
+                                        onClick = { viewModel.deleteModelPermanently(model) },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.DeleteForever,
+                                            contentDescription = "Delete Model File",
+                                            tint = AccentRed.copy(alpha = 0.8f),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+
                                     OutlinedButton(
                                         onClick = { modelToQuantize = model },
                                         shape = RoundedCornerShape(8.dp),

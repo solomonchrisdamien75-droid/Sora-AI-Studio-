@@ -8,6 +8,10 @@ import com.example.ai.hardware.DeviceHardwareProfile
 import com.example.ai.hardware.HardwareDetector
 import com.example.ai.inference.InferenceEngineManager
 import com.example.ai.inference.InferenceProgress
+import com.example.ai.models.ModelDownloadState
+import com.example.ai.models.ModelStorageScanner
+import com.example.ai.models.ModelValidationEngine
+import com.example.ai.models.ModelValidationStatus
 import com.example.ai.quantization.ModelQuantizationEngine
 import com.example.ai.queue.TaskQueueManager
 import com.example.ai.server.LocalApiServer
@@ -19,6 +23,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import java.io.File
 
 class SoraRepository(
     private val context: Context,
@@ -35,13 +40,18 @@ class SoraRepository(
 
     val hardwareDetector = HardwareDetector(context)
     val deviceStorageManager = com.example.ai.hardware.DeviceStorageManager(context)
+    val projectStorageManager = ProjectStorageManager(context)
     val telemetryPerformanceMonitor = com.example.ai.hardware.TelemetryPerformanceMonitor(context)
     val logExportManager = com.example.ai.logging.LogExportManager(context)
 
     val inferenceEngineManager = InferenceEngineManager(context)
+    val aiInferenceManager = com.example.ai.inference.AIInferenceManager(context, inferenceEngineManager)
+    val aiJobManager = com.example.ai.jobs.AIJobManager(context, aiInferenceManager, generationJobDao, repoScope)
     val localApiServer = LocalApiServer(context, inferenceEngineManager)
     val huggingFaceClient = HuggingFaceClient()
     val modelDownloadManager = ModelDownloadManager(context, aiModelDao)
+    val modelValidator = ModelValidationEngine(context)
+    val modelStorageScanner = ModelStorageScanner(context, modelValidator, aiModelDao)
     val modelQuantizationEngine = ModelQuantizationEngine(context, aiModelDao, quantizationHistoryDao)
     val offlineAssistantEngine = OfflineAssistantEngine(context, aiModelDao)
     val videoEditorEngine = VideoEditorEngine()
@@ -49,15 +59,23 @@ class SoraRepository(
     val soraCloudClient = SoraCloudClient(soraCloudDao)
     val taskQueueManager = TaskQueueManager(generationJobDao, galleryDao, inferenceEngineManager, repoScope, onJobFinished, realMediaSynthesisEngine)
 
+    // Unified AI Engines for Story, Script, and Voice
+    val voiceAIEngine = com.example.ai.voice.VoiceAIEngine(context, aiInferenceManager, aiJobManager, projectStorageManager)
+    val storyEngine = com.example.ai.story.StoryEngine(aiInferenceManager, aiJobManager, projectStorageManager)
+    val scriptEngine = com.example.ai.script.ScriptEngine(aiInferenceManager, aiJobManager, projectStorageManager, projectDao, taskQueueManager, voiceAIEngine)
 
     fun getDeviceHardwareProfile(): DeviceHardwareProfile {
         return hardwareDetector.getDeviceProfile()
     }
 
+    /**
+     * Initializes default catalog models and executes on-device physical file reconciliation.
+     * Never falsely marks a model as downloaded unless validated on disk.
+     */
     suspend fun initializeDefaultData() = withContext(Dispatchers.IO) {
         val existingModels = aiModelDao.getAllModels().first()
         if (existingModels.isEmpty()) {
-            val defaults = listOf(
+            val catalogAvailableForDownload = listOf(
                 AiModelEntity(
                     id = "model_sora_litert_v1",
                     name = "Sora LiteRT Fast Video (3GB+ RAM)",
@@ -65,9 +83,13 @@ class SoraRepository(
                     format = "LITERET",
                     sizeBytes = 1_100_000_000L,
                     ramRequiredMb = 2200,
-                    isDownloaded = true,
+                    isDownloaded = false,
+                    downloadState = ModelDownloadState.NOT_DOWNLOADED.name,
+                    storageLocation = "INTERNAL",
+                    localPath = null,
                     description = "Ultra-fast on-device LiteRT Vulkan video generator.",
-                    isFavorite = true
+                    isFavorite = true,
+                    validationStatus = "UNVERIFIED"
                 ),
                 AiModelEntity(
                     id = "model_wan_13b_gguf",
@@ -76,8 +98,12 @@ class SoraRepository(
                     format = "GGUF",
                     sizeBytes = 1_400_000_000L,
                     ramRequiredMb = 2800,
-                    isDownloaded = true,
-                    description = "High detail GGUF model optimized for 6GB RAM phones."
+                    isDownloaded = false,
+                    downloadState = ModelDownloadState.NOT_DOWNLOADED.name,
+                    storageLocation = "INTERNAL",
+                    localPath = null,
+                    description = "High detail GGUF model optimized for 6GB RAM phones.",
+                    validationStatus = "UNVERIFIED"
                 ),
                 AiModelEntity(
                     id = "model_sd15_litert",
@@ -86,8 +112,12 @@ class SoraRepository(
                     format = "LITERET",
                     sizeBytes = 980_000_000L,
                     ramRequiredMb = 1900,
-                    isDownloaded = true,
-                    description = "Fast text-to-image and inpainting model."
+                    isDownloaded = false,
+                    downloadState = ModelDownloadState.NOT_DOWNLOADED.name,
+                    storageLocation = "INTERNAL",
+                    localPath = null,
+                    description = "Fast text-to-image and inpainting model.",
+                    validationStatus = "UNVERIFIED"
                 ),
                 AiModelEntity(
                     id = "model_ltx_video_onnx",
@@ -96,8 +126,12 @@ class SoraRepository(
                     format = "ONNX",
                     sizeBytes = 2_100_000_000L,
                     ramRequiredMb = 4200,
-                    isDownloaded = true,
-                    description = "Cinema quality 1080p rendering for high-end devices."
+                    isDownloaded = false,
+                    downloadState = ModelDownloadState.NOT_DOWNLOADED.name,
+                    storageLocation = "INTERNAL",
+                    localPath = null,
+                    description = "Cinema quality 1080p rendering for high-end devices.",
+                    validationStatus = "UNVERIFIED"
                 ),
                 AiModelEntity(
                     id = "model_gemma_2b_gguf",
@@ -106,20 +140,53 @@ class SoraRepository(
                     format = "GGUF",
                     sizeBytes = 1_250_000_000L,
                     ramRequiredMb = 2100,
-                    isDownloaded = true,
-                    description = "Offline LLM scriptwriter and scene planner."
+                    isDownloaded = false,
+                    downloadState = ModelDownloadState.NOT_DOWNLOADED.name,
+                    storageLocation = "INTERNAL",
+                    localPath = null,
+                    description = "Offline LLM scriptwriter and scene planner.",
+                    validationStatus = "UNVERIFIED"
                 )
             )
-            aiModelDao.insertModels(defaults)
+            aiModelDao.insertModels(catalogAvailableForDownload)
+        }
 
-            // Auto-load Gemma 2B GGUF or Sora LiteRT by default so server is ready out of the box
-            inferenceEngineManager.loadModel(defaults[0])
-        } else {
-            // Load the first downloaded model if available
-            val downloaded = existingModels.firstOrNull { it.isDownloaded } ?: existingModels.firstOrNull()
-            if (downloaded != null) {
-                inferenceEngineManager.loadModel(downloaded)
+        // Run physical storage scan and reconciliation
+        // This validates real files on disk and marks ONLY truly existing physical files as AVAILABLE
+        modelStorageScanner.reconcileDatabaseWithStorage()
+
+        // Clean any existing records that had isDownloaded = true without valid physical file
+        val allModels = aiModelDao.getAllModelsList()
+        for (model in allModels) {
+            val path = model.localPath
+            if (model.isDownloaded) {
+                if (path.isNullOrBlank()) {
+                    aiModelDao.updateModel(
+                        model.copy(
+                            isDownloaded = false,
+                            downloadState = ModelDownloadState.NOT_DOWNLOADED.name,
+                            validationStatus = ModelValidationStatus.MISSING_FILE.name
+                        )
+                    )
+                } else {
+                    val file = File(path)
+                    if (!file.exists() || file.length() == 0L) {
+                        aiModelDao.updateModel(
+                            model.copy(
+                                isDownloaded = false,
+                                downloadState = ModelDownloadState.MISSING.name,
+                                validationStatus = ModelValidationStatus.MISSING_FILE.name
+                            )
+                        )
+                    }
+                }
             }
+        }
+
+        // Only load a model if it is genuinely downloaded and physically exists
+        val trulyDownloadedModels = aiModelDao.getAllModelsList().filter { it.isDownloaded && it.downloadState == ModelDownloadState.AVAILABLE.name }
+        if (trulyDownloadedModels.isNotEmpty()) {
+            inferenceEngineManager.loadModel(trulyDownloadedModels.first())
         }
 
         val existingGallery = galleryDao.getAllItems().first()
