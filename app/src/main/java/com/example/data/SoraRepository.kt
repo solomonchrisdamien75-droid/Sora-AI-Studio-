@@ -54,7 +54,7 @@ class SoraRepository(
     val modelStorageScanner = ModelStorageScanner(context, modelValidator, aiModelDao)
     val modelQuantizationEngine = ModelQuantizationEngine(context, aiModelDao, quantizationHistoryDao)
     val modelFusionEngine = com.example.ai.fusion.ModelFusionEngine(context, aiModelDao)
-    val offlineAssistantEngine = OfflineAssistantEngine(context, aiModelDao)
+    val offlineAssistantEngine = OfflineAssistantEngine(context, aiModelDao, inferenceEngineManager)
     val videoEditorEngine = VideoEditorEngine()
     val realMediaSynthesisEngine = com.example.ai.generator.RealMediaSynthesisEngine(context)
     val soraCloudClient = SoraCloudClient(soraCloudDao)
@@ -74,86 +74,7 @@ class SoraRepository(
      * Never falsely marks a model as downloaded unless validated on disk.
      */
     suspend fun initializeDefaultData() = withContext(Dispatchers.IO) {
-        val existingModels = aiModelDao.getAllModels().first()
-        if (existingModels.isEmpty()) {
-            val catalogAvailableForDownload = listOf(
-                AiModelEntity(
-                    id = "model_sora_litert_v1",
-                    name = "Sora LiteRT Fast Video (3GB+ RAM)",
-                    modelType = "VIDEO",
-                    format = "LITERET",
-                    sizeBytes = 1_100_000_000L,
-                    ramRequiredMb = 2200,
-                    isDownloaded = false,
-                    downloadState = ModelDownloadState.NOT_DOWNLOADED.name,
-                    storageLocation = "INTERNAL",
-                    localPath = null,
-                    description = "Ultra-fast on-device LiteRT Vulkan video generator.",
-                    isFavorite = true,
-                    validationStatus = "UNVERIFIED"
-                ),
-                AiModelEntity(
-                    id = "model_wan_13b_gguf",
-                    name = "Wan 2.1 Video (1.3B GGUF)",
-                    modelType = "VIDEO",
-                    format = "GGUF",
-                    sizeBytes = 1_400_000_000L,
-                    ramRequiredMb = 2800,
-                    isDownloaded = false,
-                    downloadState = ModelDownloadState.NOT_DOWNLOADED.name,
-                    storageLocation = "INTERNAL",
-                    localPath = null,
-                    description = "High detail GGUF model optimized for 6GB RAM phones.",
-                    validationStatus = "UNVERIFIED"
-                ),
-                AiModelEntity(
-                    id = "model_sd15_litert",
-                    name = "Stable Diffusion 1.5 Image (LiteRT)",
-                    modelType = "IMAGE",
-                    format = "LITERET",
-                    sizeBytes = 980_000_000L,
-                    ramRequiredMb = 1900,
-                    isDownloaded = false,
-                    downloadState = ModelDownloadState.NOT_DOWNLOADED.name,
-                    storageLocation = "INTERNAL",
-                    localPath = null,
-                    description = "Fast text-to-image and inpainting model.",
-                    validationStatus = "UNVERIFIED"
-                ),
-                AiModelEntity(
-                    id = "model_ltx_video_onnx",
-                    name = "LTX Video 0.9.1 (ONNX Cinema)",
-                    modelType = "VIDEO",
-                    format = "ONNX",
-                    sizeBytes = 2_100_000_000L,
-                    ramRequiredMb = 4200,
-                    isDownloaded = false,
-                    downloadState = ModelDownloadState.NOT_DOWNLOADED.name,
-                    storageLocation = "INTERNAL",
-                    localPath = null,
-                    description = "Cinema quality 1080p rendering for high-end devices.",
-                    validationStatus = "UNVERIFIED"
-                ),
-                AiModelEntity(
-                    id = "model_gemma_2b_gguf",
-                    name = "Gemma 2B Offline Scriptwriter",
-                    modelType = "TEXT",
-                    format = "GGUF",
-                    sizeBytes = 1_250_000_000L,
-                    ramRequiredMb = 2100,
-                    isDownloaded = false,
-                    downloadState = ModelDownloadState.NOT_DOWNLOADED.name,
-                    storageLocation = "INTERNAL",
-                    localPath = null,
-                    description = "Offline LLM scriptwriter and scene planner.",
-                    validationStatus = "UNVERIFIED"
-                )
-            )
-            aiModelDao.insertModels(catalogAvailableForDownload)
-        }
-
-        // Run physical storage scan and reconciliation
-        // This validates real files on disk and marks ONLY truly existing physical files as AVAILABLE
+        // Models page starts empty until user explicitly uploads or imports downloaded model files from phone or SD card storage.
         modelStorageScanner.reconcileDatabaseWithStorage()
 
         // Clean any existing records that had isDownloaded = true without valid physical file
@@ -256,16 +177,21 @@ class SoraRepository(
         return@withContext job
     }
 
-    fun startLocalGenerationStream(job: GenerationJobEntity): Flow<InferenceProgress> {
-        val activeModel = inferenceEngineManager.activeLoadedModel.value ?: AiModelEntity(
-            id = "active_model",
-            name = "Sora Engine",
-            modelType = "VIDEO",
-            format = if (job.mode == "BALANCED") "ONNX" else "LITERET",
-            sizeBytes = 1_000_000_000L,
-            ramRequiredMb = 2000,
-            isDownloaded = true
-        )
+    suspend fun startLocalGenerationStream(job: GenerationJobEntity): Flow<InferenceProgress> {
+        var activeModel = inferenceEngineManager.activeLoadedModel.value
+        if (activeModel == null) {
+            val downloaded = aiModelDao.getAllModelsList().filter { it.isDownloaded }
+            if (downloaded.isNotEmpty()) {
+                val modelToLoad = downloaded.firstOrNull { it.modelType == "VIDEO" || it.modelType == "IMAGE" } ?: downloaded.first()
+                inferenceEngineManager.loadModel(modelToLoad)
+                activeModel = inferenceEngineManager.activeLoadedModel.value
+            }
+        }
+        
+        if (activeModel == null) {
+            throw IllegalStateException("No downloaded model available. Please download a model first to pull inference into RAM.")
+        }
+
         val engine = inferenceEngineManager.selectEngineForModel(activeModel)
         return engine.generateVideoFrames(
             prompt = job.prompt,

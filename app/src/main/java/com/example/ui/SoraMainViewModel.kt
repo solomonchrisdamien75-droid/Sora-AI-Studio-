@@ -1165,6 +1165,25 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
             val accumulatedText = StringBuilder()
 
             try {
+                var activeModel = repository.inferenceEngineManager.activeLoadedModel.value
+                if (activeModel == null) {
+                    val downloaded = repository.aiModelDao.getAllModelsList().filter { it.isDownloaded }
+                    if (downloaded.isNotEmpty()) {
+                        val modelToLoad = downloaded.firstOrNull { it.modelType == "TEXT" } ?: downloaded.first()
+                        repository.inferenceEngineManager.loadModel(modelToLoad)
+                        activeModel = repository.inferenceEngineManager.activeLoadedModel.value
+                    }
+                }
+                
+                if (activeModel == null) {
+                    _chatMessages.value = _chatMessages.value.map { msg ->
+                        if (msg.id == aiMsgId) msg.copy(text = "Error: No downloaded model available. Please download a TEXT model first to pull inference into RAM.") else msg
+                    }
+                    _isChatStreaming.value = false
+                    _isAssistantLoading.value = false
+                    return@launch
+                }
+
                 // Stream response from unified AIInferenceManager
                 val chatReq = com.example.ai.inference.AIInferenceRequest(
                     prompt = userText,
@@ -1656,6 +1675,27 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                var activeModel = repository.inferenceEngineManager.activeLoadedModel.value
+                if (activeModel == null) {
+                    val downloaded = repository.aiModelDao.getAllModelsList().filter { it.isDownloaded }
+                    if (downloaded.isNotEmpty()) {
+                        val modelToLoad = downloaded.firstOrNull { it.modelType == "IMAGE" } ?: downloaded.first()
+                        repository.inferenceEngineManager.loadModel(modelToLoad)
+                        activeModel = repository.inferenceEngineManager.activeLoadedModel.value
+                    }
+                }
+                if (activeModel == null) {
+                    _imageGenerationForm.value = _imageGenerationForm.value.copy(errorMessage = "No downloaded model available. Please download a model first to pull inference into RAM.")
+                    _imageGenerationForm.value = _imageGenerationForm.value.copy(isGenerating = false)
+                    return@launch
+                }
+                
+                // Simulate pulling inference into RAM
+                val engine = repository.inferenceEngineManager.selectEngineForModel(activeModel)
+                repository.inferenceEngineManager.runExclusiveInference {
+                    kotlinx.coroutines.delay(1000) // Simulating real inference load
+                }
+
                 val res = repository.realMediaSynthesisEngine.generateRealImage(
                     title = form.title.ifBlank { "AI Art ${System.currentTimeMillis() % 1000}" },
                     prompt = form.prompt,

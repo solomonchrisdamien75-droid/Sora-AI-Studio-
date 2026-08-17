@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
@@ -39,6 +40,7 @@ import androidx.core.content.ContextCompat
 import com.example.ui.SoraMainViewModel
 import com.example.ui.SoraTab
 import com.example.ui.components.AppArchitectureAndSourceViewerDialog
+import com.example.ui.components.RamUsageMonitor
 import com.example.ui.components.SoraBadge
 import com.example.ui.components.SoraGlassCard
 import com.example.ui.components.SoraSectionHeader
@@ -153,6 +155,55 @@ fun SettingsScreen(viewModel: SoraMainViewModel) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // ==========================================
+        // SYSTEM RAM MONITOR HEADER
+        // ==========================================
+        item {
+            RamUsageMonitor()
+        }
+
+        // ==========================================
+        // 0. CREATOR SUPPORT
+        // ==========================================
+        item {
+            val uriHandler = LocalUriHandler.current
+            SoraGlassCard(borderColor = ElectricPink) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = "SUPPORT THE CREATOR",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = ElectricPink,
+                        letterSpacing = 1.sp
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            uriHandler.openUri("https://youtube.com/shorts/iseGrWemeZw?is=hRw6b8l2tjrZpvYh")
+                        },
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(imageVector = Icons.Default.SmartDisplay, contentDescription = null, tint = ElectricPink, modifier = Modifier.size(24.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(text = "@OneFactEndlessWonder", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                Text(text = "Watch the latest short!", fontSize = 12.sp, color = TextSecondary)
+                            }
+                        }
+                        Icon(imageVector = Icons.Default.OpenInNew, contentDescription = null, tint = ElectricPink, modifier = Modifier.size(16.dp))
+                    }
+                    Button(
+                        onClick = { uriHandler.openUri("https://www.youtube.com/@OneFactEndlessWonder") },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = ElectricPink)
+                    ) {
+                        Text("Subscribe on YouTube")
+                    }
+                }
+            }
+        }
+
         item {
             SoraSectionHeader(
                 title = "Settings",
@@ -1495,8 +1546,7 @@ fun SettingsScreen(viewModel: SoraMainViewModel) {
 
                     val aboutLinks = listOf(
                         Triple("Project Repository", "View source code on GitHub", "https://github.com"),
-                        Triple("Orailnoor on YouTube", "Subscribe for tutorials and updates", "https://youtube.com/@orailnoor"),
-                        Triple("Tech Jarves on YouTube", "Subscribe for tutorials and updates", "https://youtube.com/@techjarves")
+                        Triple("One Fact Endless Wonder on YouTube", "Subscribe for tutorials and updates", "https://www.youtube.com/@OneFactEndlessWonder")
                     )
 
                     Column(

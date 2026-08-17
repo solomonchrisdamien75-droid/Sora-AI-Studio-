@@ -1,8 +1,13 @@
 package com.example.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -54,6 +59,18 @@ fun WakeWordScreen(viewModel: SoraMainViewModel) {
     var showConsentDialog by remember { mutableStateOf(false) }
     var testManualInput by remember { mutableStateOf("") }
     var selectedCategoryFilter by remember { mutableStateOf<VoiceActionType?>(null) }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = { isGranted ->
+            if (isGranted) {
+                viewModel.toggleWakeWordService(true)
+                Toast.makeText(context, "Microphone access granted! Background wake-word is active.", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(context, "Microphone permission is required.", Toast.LENGTH_SHORT).show()
+            }
+        }
+    )
 
     // Pulsing animation for audio visualizer
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
@@ -238,7 +255,15 @@ fun WakeWordScreen(viewModel: SoraMainViewModel) {
                                 if (!consentGranted) {
                                     showConsentDialog = true
                                 } else {
-                                    viewModel.toggleWakeWordService(!isRunning)
+                                    if (!isRunning) {
+                                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                                            viewModel.toggleWakeWordService(true)
+                                        } else {
+                                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                        }
+                                    } else {
+                                        viewModel.toggleWakeWordService(false)
+                                    }
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(
@@ -646,9 +671,13 @@ fun WakeWordScreen(viewModel: SoraMainViewModel) {
                 Button(
                     onClick = {
                         viewModel.grantWakeWordConsent()
-                        viewModel.toggleWakeWordService(true)
                         showConsentDialog = false
-                        Toast.makeText(context, "Voice consent granted! Background wake-word is active.", Toast.LENGTH_SHORT).show()
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                            viewModel.toggleWakeWordService(true)
+                            Toast.makeText(context, "Voice consent granted! Background wake-word is active.", Toast.LENGTH_SHORT).show()
+                        } else {
+                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
                     shape = RoundedCornerShape(8.dp)

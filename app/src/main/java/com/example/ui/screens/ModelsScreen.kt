@@ -1031,7 +1031,69 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
                     matchesQuery && matchesFilter
                 }
 
-                items(filteredModels) { model ->
+                if (filteredModels.isEmpty()) {
+                    item {
+                        SoraGlassCard(borderColor = NeonCyan) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.FolderOff,
+                                    contentDescription = null,
+                                    tint = NeonCyan,
+                                    modifier = Modifier.size(48.dp)
+                                )
+                                Text(
+                                    text = "No AI Models Found in Storage",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary
+                                )
+                                Text(
+                                    text = "Download real AI model binaries to your Phone or SD Card storage, or import existing .gguf, .onnx, .safetensors, or .tflite files from your storage.",
+                                    fontSize = 12.sp,
+                                    color = TextSecondary,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Button(
+                                        onClick = { viewModel.selectTab(com.example.ui.SoraTab.DOWNLOADS) },
+                                        modifier = Modifier.weight(1f).testTag("empty_download_models_btn"),
+                                        colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Icon(Icons.Default.CloudDownload, contentDescription = null, tint = DeepDarkBg, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Download Models", color = DeepDarkBg, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+
+                                    OutlinedButton(
+                                        onClick = { showImportDialog = true },
+                                        modifier = Modifier.weight(1f).testTag("empty_upload_models_btn"),
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonCyan),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, NeonCyan),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Icon(Icons.Default.FileUpload, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Upload / Import", color = NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    items(filteredModels) { model ->
                     val isCompatible = availRamMb >= model.ramRequiredMb
                     val isLoadedInPool = loadedModelsPool.any { it.id == model.id }
                     val isQuantizedVariant = model.name.contains("Q4") || model.name.contains("Q3") || model.name.contains("Q2") || model.name.contains("INT8")
@@ -1159,6 +1221,7 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
                         }
                     }
                 }
+            }
             }
 
             item {

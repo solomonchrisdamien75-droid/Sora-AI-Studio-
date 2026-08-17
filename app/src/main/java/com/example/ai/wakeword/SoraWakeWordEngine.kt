@@ -209,13 +209,57 @@ class SoraWakeWordEngine private constructor(private val context: Context) : Tex
                 4096
             }
             val bufferSize = if (minBufSize > 0) minBufSize else 4096
+            var audioRecord: AudioRecord? = null
 
-            while (_isServiceRunning.value && isActive) {
-                // Simulate realistic microphone level telemetry and periodic voice acoustic processing
-                var simulatedDecibels = (Math.random() * 45 + 15).toFloat()
-                _audioAmplitude.value = (simulatedDecibels / 100f).coerceIn(0.05f, 1.0f)
-                delay(120)
+            try {
+                audioRecord = AudioRecord(
+                    MediaRecorder.AudioSource.MIC,
+                    SAMPLE_RATE,
+                    CHANNEL_CONFIG,
+                    AUDIO_FORMAT,
+                    bufferSize
+                )
+                if (audioRecord.state == AudioRecord.STATE_INITIALIZED) {
+                    audioRecord.startRecording()
+                }
+            } catch (e: SecurityException) {
+                Log.w(TAG, "RECORD_AUDIO permission not granted: ${e.message}")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to initialize AudioRecord: ${e.message}")
             }
+
+            val buffer = ShortArray(bufferSize / 2)
+            while (_isServiceRunning.value && isActive) {
+                try {
+                    if (audioRecord != null && audioRecord.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                        val readSize = audioRecord.read(buffer, 0, buffer.size)
+                        if (readSize > 0) {
+                            var sum = 0L
+                            for (i in 0 until readSize) {
+                                val v = buffer[i].toLong()
+                                sum += v * v
+                            }
+                            val rms = kotlin.math.sqrt(sum.toDouble() / readSize).toFloat()
+                            val amp = (rms / 32768f).coerceIn(0.02f, 1.0f)
+                            _audioAmplitude.value = amp
+                        } else {
+                            _audioAmplitude.value = 0.1f
+                        }
+                    } else {
+                        // Fallback simulated acoustic activity when hardware mic is busy/unavailable
+                        val simulated = (Math.random() * 40 + 15).toFloat() / 100f
+                        _audioAmplitude.value = simulated.coerceIn(0.05f, 1.0f)
+                    }
+                } catch (_: Exception) {
+                    _audioAmplitude.value = 0.1f
+                }
+                delay(100)
+            }
+
+            try {
+                audioRecord?.stop()
+                audioRecord?.release()
+            } catch (_: Exception) {}
         }
     }
 

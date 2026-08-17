@@ -508,7 +508,6 @@ class ModelQuantizationEngine(
         )
 
         withContext(Dispatchers.IO) {
-            aiModelDao.insertModel(quantizedModelEntity)
             quantizationHistoryDao?.insertHistory(historyEntry)
         }
 

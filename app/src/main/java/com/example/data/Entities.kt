@@ -212,5 +212,31 @@ data class LocalModelMetadataEntity(
     val createdAt: Long = System.currentTimeMillis()
 )
 
+@Entity(tableName = "models")
+data class ModelEntity(
+    @PrimaryKey val modelId: String,
+    val name: String,
+    val format: String, // GGUF, ONNX, TFLITE, SAFETENSORS, LITERM
+    val backend: String, // llama.cpp, ONNX Runtime, LiteRT
+    val localPath: String,
+    val fileSize: Long,
+    val version: String = "1.0",
+    val downloadStatus: String = "DOWNLOADED",
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "model_capabilities", primaryKeys = ["modelId"])
+data class ModelCapabilityEntity(
+    val modelId: String,
+    val taskTypes: String, // Comma-separated or JSON list of supported tasks
+    val chat: Boolean = false,
+    val textGeneration: Boolean = false,
+    val imageGeneration: Boolean = false,
+    val videoGeneration: Boolean = false,
+    val audioGeneration: Boolean = false,
+    val vision: Boolean = false,
+    val embeddings: Boolean = false
+)
+
 
 

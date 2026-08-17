@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -67,6 +68,44 @@ fun HomeScreen(viewModel: SoraMainViewModel) {
                     )
                 }
                 StatusIndicator(isConnected = true)
+            }
+        }
+
+        // Support the Creator Banner
+        item {
+            val uriHandler = LocalUriHandler.current
+            SoraGlassCard(borderColor = ElectricPink) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().clickable {
+                        uriHandler.openUri("https://youtube.com/shorts/iseGrWemeZw?is=hRw6b8l2tjrZpvYh")
+                    }
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Default.SmartDisplay, contentDescription = "YouTube", tint = ElectricPink)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Support the Creator!",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = ElectricPink
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Subscribe to @OneFactEndlessWonder and watch the latest short!",
+                        fontSize = 13.sp,
+                        color = TextPrimary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            uriHandler.openUri("https://www.youtube.com/@OneFactEndlessWonder")
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = ElectricPink.copy(alpha = 0.8f))
+                    ) {
+                        Text("Visit Channel")
+                    }
+                }
             }
         }
 

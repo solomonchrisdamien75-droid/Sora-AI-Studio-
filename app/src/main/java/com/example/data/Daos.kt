@@ -237,5 +237,35 @@ interface LocalModelMetadataDao {
     suspend fun clearAll()
 }
 
+@Dao
+interface ModelDao {
+    @Query("SELECT * FROM models ORDER BY name ASC")
+    fun getAllModels(): Flow<List<ModelEntity>>
+
+    @Query("SELECT * FROM models WHERE modelId = :modelId LIMIT 1")
+    suspend fun getModelById(modelId: String): ModelEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertModel(model: ModelEntity)
+
+    @Delete
+    suspend fun deleteModel(model: ModelEntity)
+
+    @Query("DELETE FROM models WHERE modelId = :modelId")
+    suspend fun deleteModelById(modelId: String)
+}
+
+@Dao
+interface ModelCapabilityDao {
+    @Query("SELECT * FROM model_capabilities WHERE modelId = :modelId LIMIT 1")
+    suspend fun getCapabilitiesForModel(modelId: String): ModelCapabilityEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertCapabilities(capabilities: ModelCapabilityEntity)
+
+    @Query("DELETE FROM model_capabilities WHERE modelId = :modelId")
+    suspend fun deleteCapabilities(modelId: String)
+}
+
 
 

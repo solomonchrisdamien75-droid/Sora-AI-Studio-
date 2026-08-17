@@ -111,78 +111,7 @@ class HuggingFaceClient(
     }
 
     private fun getCuratedModels(): List<HuggingFaceModelInfo> {
-        return listOf(
-            HuggingFaceModelInfo(
-                id = "sora-studio/wan-2.1-video-1.3b-gguf",
-                name = "Wan 2.1 Video (1.3B GGUF)",
-                author = "SoraAIStudio",
-                downloads = 45200,
-                likes = 3100,
-                format = "GGUF",
-                modelType = "VIDEO",
-                sizeBytes = 1_400_000_000L,
-                ramRequiredMb = 2800,
-                downloadUrl = "https://huggingface.co/SoraAIStudio/wan-2.1-video/resolve/main/wan-1.3b-q4.gguf",
-                tags = listOf("video-gen", "low-ram", "gguf", "fast"),
-                availableFiles = listOf("wan-1.3b-q4.gguf", "config.json", "tokenizer.json")
-            ),
-            HuggingFaceModelInfo(
-                id = "sora-studio/ltx-video-0.9.1-onnx",
-                name = "LTX Video 0.9.1 (ONNX Vulkan)",
-                author = "Lightricks",
-                downloads = 89000,
-                likes = 6400,
-                format = "ONNX",
-                modelType = "VIDEO",
-                sizeBytes = 2_100_000_000L,
-                ramRequiredMb = 4200,
-                downloadUrl = "https://huggingface.co/Lightricks/LTX-Video/resolve/main/ltx-video.onnx",
-                tags = listOf("video", "vulkan", "cinema-mode", "onnx"),
-                availableFiles = listOf("ltx-video.onnx", "vae.onnx", "config.json")
-            ),
-            HuggingFaceModelInfo(
-                id = "sora-studio/stable-diffusion-v1-5-bin",
-                name = "Stable Diffusion 1.5 (PyTorch BIN)",
-                author = "StabilityAI",
-                downloads = 142000,
-                likes = 12500,
-                format = "BIN",
-                modelType = "IMAGE",
-                sizeBytes = 1_700_000_000L,
-                ramRequiredMb = 2900,
-                downloadUrl = "https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/unet/diffusion_pytorch_model.bin",
-                tags = listOf("image-gen", "bin-weights", "pytorch", "retro"),
-                availableFiles = listOf("unet/diffusion_pytorch_model.bin", "text_encoder/pytorch_model.bin", "vae/diffusion_pytorch_model.bin")
-            ),
-            HuggingFaceModelInfo(
-                id = "sora-studio/stable-diffusion-v1-5-litert",
-                name = "Stable Diffusion 1.5 (LiteRT)",
-                author = "StabilityAI",
-                downloads = 142000,
-                likes = 12500,
-                format = "LITERET",
-                modelType = "IMAGE",
-                sizeBytes = 980_000_000L,
-                ramRequiredMb = 1900,
-                downloadUrl = "https://huggingface.co/SoraAIStudio/sd-1.5-litert/resolve/main/sd15.tflite",
-                tags = listOf("image-gen", "3gb-ram-compatible", "litert"),
-                availableFiles = listOf("sd15.tflite", "config.json")
-            ),
-            HuggingFaceModelInfo(
-                id = "sora-studio/gemma-2b-it-assistant-gguf",
-                name = "Gemma 2B Scriptwriter (GGUF)",
-                author = "Google",
-                downloads = 98000,
-                likes = 8900,
-                format = "GGUF",
-                modelType = "TEXT",
-                sizeBytes = 1_250_000_000L,
-                ramRequiredMb = 2200,
-                downloadUrl = "https://huggingface.co/google/gemma-2b-it-GGUF/resolve/main/gemma-2b-it-q4_k_m.gguf",
-                tags = listOf("scriptwriter", "text", "assistant", "offline"),
-                availableFiles = listOf("gemma-2b-it-q4_k_m.gguf", "tokenizer.model", "config.json")
-            )
-        )
+        return emptyList()
     }
 }
 

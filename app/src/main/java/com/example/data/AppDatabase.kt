@@ -5,6 +5,13 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
+import com.example.data.local.entities.ModelEntity as LocalModelEntity
+import com.example.data.local.entities.ModelCapabilityEntity as LocalModelCapabilityEntity
+import com.example.data.local.entities.GenerationTaskEntity
+import com.example.data.local.daos.ModelRegistryDao
+import com.example.data.local.daos.ModelCapabilityRegistryDao
+import com.example.data.local.daos.GenerationTaskDao
+
 @Database(
     entities = [
         AiModelEntity::class,
@@ -16,9 +23,14 @@ import androidx.room.RoomDatabase
         StoryProjectEntity::class,
         ScriptProjectEntity::class,
         GenerationLogEntity::class,
-        LocalModelMetadataEntity::class
+        LocalModelMetadataEntity::class,
+        ModelEntity::class,
+        ModelCapabilityEntity::class,
+        LocalModelEntity::class,
+        LocalModelCapabilityEntity::class,
+        GenerationTaskEntity::class
     ],
-    version = 4,
+    version = 6,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -32,6 +44,11 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun scriptProjectDao(): ScriptProjectDao
     abstract fun generationLogDao(): GenerationLogDao
     abstract fun localModelMetadataDao(): LocalModelMetadataDao
+    abstract fun modelDao(): ModelDao
+    abstract fun modelCapabilityDao(): ModelCapabilityDao
+    abstract fun modelRegistryDao(): ModelRegistryDao
+    abstract fun modelCapabilityRegistryDao(): ModelCapabilityRegistryDao
+    abstract fun generationTaskDao(): GenerationTaskDao
 
 
 

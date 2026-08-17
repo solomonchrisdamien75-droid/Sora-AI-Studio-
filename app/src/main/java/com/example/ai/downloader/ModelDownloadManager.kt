@@ -42,12 +42,13 @@ class ModelDownloadManager(
     private val aiModelDao: AiModelDao,
     val networkUtility: HuggingFaceNetworkUtility = HuggingFaceNetworkUtility(HuggingFaceRetrofitClient.apiService)
 ) {
+    val modelLoaderService = ModelLoaderService(context)
     private val validator = ModelValidationEngine(context)
     private val storageManager = DeviceStorageManager(context)
     private val activeDownloads = mutableMapOf<String, Boolean>()
 
     fun getInternalStorageDir(): File {
-        return File(context.filesDir, "ai_models").apply { mkdirs() }
+        return File(context.filesDir, "models").apply { mkdirs() }
     }
 
     fun getSdCardStorageDir(): File {
@@ -164,9 +165,6 @@ class ModelDownloadManager(
                         quantization = if (model.name.contains("Q4")) "Q4_K_M" else "Standard",
                         description = "Downloaded via Retrofit to $locationLabel • Author: ${model.author} • Verified format: ${validation.detectedFormat}"
                     )
-                    withContext(Dispatchers.IO) {
-                        aiModelDao.insertModel(entity)
-                    }
                 } else if (safDocFile != null) {
                     val validation = validator.validateUri(safDocFile.uri, model.name)
                     val entity = AiModelEntity(
@@ -189,9 +187,6 @@ class ModelDownloadManager(
                         quantization = if (model.name.contains("Q4")) "Q4_K_M" else "Standard",
                         description = "Downloaded via Retrofit to SAF Directory • Author: ${model.author}"
                     )
-                    withContext(Dispatchers.IO) {
-                        aiModelDao.insertModel(entity)
-                    }
                 }
                 break
             }
@@ -282,9 +277,6 @@ class ModelDownloadManager(
                     backend = validation.backend,
                     description = if (model.description.isNotBlank()) "${model.description} (Verified in $locationLabel)" else "Verified in $locationLabel"
                 )
-                withContext(Dispatchers.IO) {
-                    aiModelDao.updateModel(updated)
-                }
                 break
             }
         }

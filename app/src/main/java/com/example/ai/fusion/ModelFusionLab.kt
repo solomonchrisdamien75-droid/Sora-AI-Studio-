@@ -338,15 +338,7 @@ class ModelFusionEngine(
             validationStatus = "VERIFIED_VALID"
         )
 
-        // Insert into Room Database
-        if (aiModelDao != null) {
-            withContext(Dispatchers.IO) {
-                aiModelDao.insertModel(fusedModel)
-            }
-            log("Successfully registered '$sanitizedName' in local Model Database!")
-        }
-
-        log("✅ FUSION COMPLETE! Unified Model '$sanitizedName' is ready for immediate inference.")
+        log("✅ FUSION COMPLETE! Unified Model '$sanitizedName' saved to storage at $localPath.")
 
         emit(
             FusionProgressState(

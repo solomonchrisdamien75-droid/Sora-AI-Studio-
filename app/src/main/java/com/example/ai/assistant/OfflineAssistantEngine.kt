@@ -1,7 +1,7 @@
 package com.example.ai.assistant
 
 import android.content.Context
-import com.example.ai.inference.LlamaCppEngine
+import com.example.ai.inference.InferenceEngineManager
 import com.example.data.AiModelDao
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.firstOrNull
@@ -29,18 +29,20 @@ data class ScriptProductionPackage(
 
 class OfflineAssistantEngine(
     private val context: Context,
-    private val aiModelDao: AiModelDao
+    private val aiModelDao: AiModelDao,
+    private val inferenceEngineManager: InferenceEngineManager
 ) {
-    private val llamaCppEngine = LlamaCppEngine(context)
 
     suspend fun generateScriptAndShots(userConcept: String): ScriptProductionPackage = withContext(Dispatchers.IO) {
         val downloadedTextModel = aiModelDao.getDownloadedModels().firstOrNull()?.firstOrNull { it.modelType == "TEXT" }
 
         val rawText = if (downloadedTextModel != null) {
-            llamaCppEngine.loadModel(downloadedTextModel)
-            llamaCppEngine.generateText("Write a movie script and shot breakdown for: $userConcept")
+            inferenceEngineManager.loadModel(downloadedTextModel)
+            inferenceEngineManager.runExclusiveInference { engine ->
+                engine.generateText("Write a movie script and shot breakdown for: $userConcept")
+            }
         } else {
-            generateOfflineTemplateScript(userConcept)
+            "Error: No downloaded model available for text inference. Please download a TEXT model to generate."
         }
 
         val title = userConcept.take(24).ifBlank { "Neo Sora Vision" }.uppercase()
