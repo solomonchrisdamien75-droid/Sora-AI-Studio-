@@ -11,7 +11,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,20 +31,22 @@ import com.example.ui.components.*
 import com.example.ui.theme.*
 import kotlinx.coroutines.launch
 
-enum class ManhwaSubTab(val title: String, val icon: ImageVector) {
-    DASHBOARD("Dashboard", Icons.Default.Dashboard),
-    IMPORT("Import", Icons.Default.CloudUpload),
-    PANEL_ANALYSIS("Panels & OCR", Icons.Default.GridView),
-    CHARACTERS("Characters", Icons.Default.People),
-    AUDIO_VOICE("Audio & VAD", Icons.Default.GraphicEq),
-    SYNC_ACTION("Sync & Action", Icons.Default.SyncAlt),
-    ANIMATION_CAMERA("Animation", Icons.Default.AutoAwesome),
-    TIMELINE("Timeline", Icons.Default.ViewTimeline),
-    RECAP_STORY("Recap & Story", Icons.Default.MenuBook),
-    PREVIEW_EXPORT("Preview & QC", Icons.Default.Movie),
-    MODELS_FUSION("Model Fusion", Icons.Default.Hub)
-}
+val ManhwaStudioFeatureItems = listOf(
+    StudioFeatureItem("DASHBOARD", 1, "Production Dashboard & Project Hub", "Project summary, progress statistics & batch render", "CORE", Icons.Default.Dashboard, "Hub"),
+    StudioFeatureItem("IMPORT", 2, "Smart Chapter Import & Strip Ingestion", "Multi-page PDF/CBZ/Webtoon strip import & vertical slicing", "IMPORT", Icons.Default.CloudUpload, "Ingestion"),
+    StudioFeatureItem("PANEL_ANALYSIS", 3, "Panel Segmentation & OCR Text Extraction", "Automated bounding box detection & bubble text OCR", "OCR", Icons.Default.GridView, "Vision"),
+    StudioFeatureItem("CHARACTERS", 4, "Character Cast & Consistency Binder", "Face embeddings, character sheets & color schemes", "CAST", Icons.Default.People, "Cast"),
+    StudioFeatureItem("AUDIO_VOICE", 5, "Voiceover & Cast Voice Dubbing", "Character-specific voice mapping & bubble audio dubbing", "AUDIO", Icons.Default.GraphicEq, "Audio"),
+    StudioFeatureItem("SYNC_ACTION", 6, "Motion & Action FX Choreographer", "Speed lines, impact zooms, screen shakes & sword trails", "ACTION", Icons.Default.SyncAlt, "Motion"),
+    StudioFeatureItem("ANIMATION_CAMERA", 7, "Dynamic Camera & 2.5D Parallax", "Vertical webtoon scroll camera & depth layer parallax", "CAMERA", Icons.Default.AutoAwesome, "Camera"),
+    StudioFeatureItem("TIMELINE", 8, "Timeline & Multi-Track Sequencer", "Panel timing, audio sync, BGM crossfade & triggers", "TIMELINE", Icons.Default.ViewTimeline, "Timeline"),
+    StudioFeatureItem("RECAP_STORY", 9, "AI Story Recap & Narrated Summary", "Scripted narrative recap summary generator & hype trailer", "RECAP", Icons.Default.MenuBook, "Recap"),
+    StudioFeatureItem("PREVIEW_EXPORT", 10, "Live Canvas Preview & Quality Control", "Real-time 60fps webtoon video preview & inspector", "PREVIEW", Icons.Default.Movie, "Preview"),
+    StudioFeatureItem("MODELS_FUSION", 11, "Model Fusion & Neural Engine Lab", "Quantized visual+audio models & hardware NPU engine", "FUSION", Icons.Default.Hub, "Engine"),
+    StudioFeatureItem("EXPORT_PRESETS", 12, "Video & Webtoon Multi-Format Exporter", "4K 60fps, 9:16 Shorts/Reels/TikTok & GIF animations", "EXPORT", Icons.Default.Share, "Export")
+)
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ManhwaStudioScreen(viewModel: SoraMainViewModel) {
     val context = LocalContext.current
@@ -53,16 +54,56 @@ fun ManhwaStudioScreen(viewModel: SoraMainViewModel) {
 
     val pipeline = remember { ManhwaStudioPipeline(context) }
     var currentProject by remember { mutableStateOf(pipeline.projectManager.createDefaultProject()) }
-    var selectedSubTab by remember { mutableStateOf(ManhwaSubTab.DASHBOARD) }
+    var selectedFeatureId by remember { mutableStateOf("DASHBOARD") }
+    val currentFeature = ManhwaStudioFeatureItems.firstOrNull { it.id == selectedFeatureId } ?: ManhwaStudioFeatureItems.first()
+    var showMenuModal by remember { mutableStateOf(false) }
 
     val activeTask by pipeline.currentTask.collectAsStateWithLifecycle()
     val modelConfig by pipeline.modelConfig.collectAsStateWithLifecycle()
 
     var showLegalDisclaimer by remember { mutableStateOf(false) }
     var showNewProjectDialog by remember { mutableStateOf(false) }
-    var snackbarHostState = remember { SnackbarHostState() }
+    val snackbarHostState = remember { SnackbarHostState() }
 
     Scaffold(
+        topBar = {
+            StudioFeatureTopBar(
+                studioTitle = "Manhwa Studio",
+                currentFeature = currentFeature,
+                totalFeatures = 12,
+                accentColor = ElectricPink,
+                onMenuClick = { showMenuModal = true },
+                actions = {
+                    IconButton(onClick = { showLegalDisclaimer = true }, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Default.Gavel, contentDescription = "Legal Notice", tint = WarningOrange)
+                    }
+                    IconButton(onClick = { showNewProjectDialog = true }, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Default.AddCircleOutline, contentDescription = "New Project", tint = NeonCyan)
+                    }
+                    Button(
+                        onClick = {
+                            coroutineScope.launch {
+                                snackbarHostState.showSnackbar("Starting AI Manhwa Recap Production Pipeline...")
+                                pipeline.runFullRecapPipeline(
+                                    project = currentProject,
+                                    imageUris = emptyList(),
+                                    audioUri = null,
+                                    recapConfig = currentProject.recapConfig
+                                ) { updated -> currentProject = updated }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = ElectricPink),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.testTag("btn_build_recap")
+                    ) {
+                        Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Recap", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            )
+        },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = DeepDarkBg
     ) { innerPadding ->
@@ -72,23 +113,29 @@ fun ManhwaStudioScreen(viewModel: SoraMainViewModel) {
                 .padding(innerPadding)
                 .background(DeepDarkBg)
         ) {
-            // Header Bar
-            ManhwaStudioHeader(
-                project = currentProject,
-                onNewProjectClick = { showNewProjectDialog = true },
-                onLegalInfoClick = { showLegalDisclaimer = true },
-                onQuickRecapClick = {
-                    coroutineScope.launch {
-                        snackbarHostState.showSnackbar("Starting AI Manhwa Recap Production Pipeline...")
-                        pipeline.runFullRecapPipeline(
-                            project = currentProject,
-                            imageUris = emptyList(),
-                            audioUri = null,
-                            recapConfig = currentProject.recapConfig
-                        ) { updated -> currentProject = updated }
-                    }
+            // Project Status Subheader
+            Surface(
+                color = GlassSurfaceVariant,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                shape = RoundedCornerShape(8.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, CardBorder)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Project: ${currentProject.title} • ${currentProject.episodeTitle} (${currentProject.scenes.size} Scenes)",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextPrimary
+                    )
+                    SoraBadge(text = "12 FEATURES ACTIVE", color = ElectricPink)
                 }
-            )
+            }
 
             // Active Background Task Status Banner (if running)
             activeTask?.let { task ->
@@ -98,75 +145,50 @@ fun ManhwaStudioScreen(viewModel: SoraMainViewModel) {
                 )
             }
 
-            // Sub Navigation Tab Bar
-            ScrollableTabRow(
-                selectedTabIndex = selectedSubTab.ordinal,
-                containerColor = GlassSurface,
-                contentColor = NeonCyan,
-                edgePadding = 12.dp,
-                indicator = { tabPositions ->
-                    if (tabPositions.isNotEmpty() && selectedSubTab.ordinal < tabPositions.size) {
-                        TabRowDefaults.SecondaryIndicator(
-                            modifier = Modifier.tabIndicatorOffset(tabPositions[selectedSubTab.ordinal]),
-                            height = 3.dp,
-                            color = ElectricPink
-                        )
-                    }
-                },
-                modifier = Modifier.fillMaxWidth()
+            // Quick horizontal feature chips + 3-line drawer trigger
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                ManhwaSubTab.entries.forEach { tab ->
-                    val isSelected = tab == selectedSubTab
-                    Tab(
+                item {
+                    AssistChip(
+                        onClick = { showMenuModal = true },
+                        label = { Text("☰ All 12 Features", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        leadingIcon = { Icon(Icons.Default.Menu, contentDescription = null, modifier = Modifier.size(14.dp), tint = ElectricPink) },
+                        colors = AssistChipDefaults.assistChipColors(containerColor = ElectricPink.copy(alpha = 0.15f), labelColor = ElectricPink)
+                    )
+                }
+                items(ManhwaStudioFeatureItems) { feature ->
+                    val isSelected = feature.id == selectedFeatureId
+                    FilterChip(
                         selected = isSelected,
-                        onClick = { selectedSubTab = tab },
-                        modifier = Modifier
-                            .padding(vertical = 8.dp)
-                            .testTag("manhwa_tab_${tab.name.lowercase()}"),
-                        text = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = tab.icon,
-                                    contentDescription = tab.title,
-                                    tint = if (isSelected) ElectricPink else TextSecondary,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = tab.title,
-                                    fontSize = 12.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (isSelected) ElectricPink else TextSecondary
-                                )
-                            }
-                        }
+                        onClick = { selectedFeatureId = feature.id },
+                        label = { Text("${feature.index}. ${feature.title}", fontSize = 11.sp) },
+                        leadingIcon = { Icon(feature.icon, contentDescription = null, modifier = Modifier.size(14.dp)) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = ElectricPink,
+                            selectedLabelColor = DeepDarkBg,
+                            selectedLeadingIconColor = DeepDarkBg
+                        )
                     )
                 }
             }
 
-            // Sub Tab Screen Contents
+            // Sub Tab Screen Contents (Changes the WHOLE page dynamically)
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(12.dp)
+                    .padding(horizontal = 14.dp, vertical = 6.dp)
             ) {
-                when (selectedSubTab) {
-                    ManhwaSubTab.DASHBOARD -> ManhwaDashboardView(
+                when (selectedFeatureId) {
+                    "DASHBOARD" -> ManhwaDashboardView(
                         project = currentProject,
-                        onNavigateTo = { selectedSubTab = it },
-                        onStartPipeline = {
-                            coroutineScope.launch {
-                                snackbarHostState.showSnackbar("Assembling Manhwa Recap...")
-                                pipeline.runFullRecapPipeline(
-                                    project = currentProject,
-                                    imageUris = emptyList(),
-                                    audioUri = null,
-                                    recapConfig = currentProject.recapConfig
-                                ) { updated -> currentProject = updated }
-                            }
-                        }
+                        onNavigateFeature = { featureId -> selectedFeatureId = featureId }
                     )
-                    ManhwaSubTab.IMPORT -> ManhwaImportView(
+                    "IMPORT" -> ManhwaImportView(
                         project = currentProject,
                         onImportCompleted = { panels, audio ->
                             currentProject = currentProject.copy(
@@ -178,7 +200,7 @@ fun ManhwaStudioScreen(viewModel: SoraMainViewModel) {
                             }
                         }
                     )
-                    ManhwaSubTab.PANEL_ANALYSIS -> ManhwaPanelAnalysisView(
+                    "PANEL_ANALYSIS" -> ManhwaPanelAnalysisView(
                         panels = currentProject.panels,
                         characters = currentProject.characters,
                         onPanelUpdated = { updatedPanel ->
@@ -188,7 +210,7 @@ fun ManhwaStudioScreen(viewModel: SoraMainViewModel) {
                             currentProject = currentProject.copy(panels = list)
                         }
                     )
-                    ManhwaSubTab.CHARACTERS -> ManhwaCharacterManagerView(
+                    "CHARACTERS" -> ManhwaCharacterManagerView(
                         characters = currentProject.characters,
                         onAddCharacter = { newChar ->
                             currentProject = currentProject.copy(characters = currentProject.characters + newChar)
@@ -200,27 +222,27 @@ fun ManhwaStudioScreen(viewModel: SoraMainViewModel) {
                             currentProject = currentProject.copy(characters = list)
                         }
                     )
-                    ManhwaSubTab.AUDIO_VOICE -> ManhwaAudioVoiceView(
+                    "AUDIO_VOICE" -> ManhwaAudioVoiceView(
                         audioTrack = currentProject.audioTrack,
                         characters = currentProject.characters,
                         onUpdateAudioTrack = { currentProject = currentProject.copy(audioTrack = it) }
                     )
-                    ManhwaSubTab.SYNC_ACTION -> ManhwaSyncActionView(
+                    "SYNC_ACTION" -> ManhwaSyncActionView(
                         scenes = currentProject.scenes,
                         audioTrack = currentProject.audioTrack,
                         onUpdateScenes = { currentProject = currentProject.copy(scenes = it) }
                     )
-                    ManhwaSubTab.ANIMATION_CAMERA -> ManhwaAnimationCameraView(
+                    "ANIMATION_CAMERA" -> ManhwaAnimationCameraView(
                         scenes = currentProject.scenes,
                         characters = currentProject.characters,
                         pipeline = pipeline,
                         onUpdateScenes = { currentProject = currentProject.copy(scenes = it) }
                     )
-                    ManhwaSubTab.TIMELINE -> ManhwaTimelineEditorView(
+                    "TIMELINE" -> ManhwaTimelineEditorView(
                         project = currentProject,
                         onUpdateProject = { currentProject = it }
                     )
-                    ManhwaSubTab.RECAP_STORY -> ManhwaRecapStoryView(
+                    "RECAP_STORY" -> ManhwaRecapStoryView(
                         project = currentProject,
                         pipeline = pipeline,
                         onUpdateProject = { currentProject = it },
@@ -228,7 +250,7 @@ fun ManhwaStudioScreen(viewModel: SoraMainViewModel) {
                             coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
                         }
                     )
-                    ManhwaSubTab.PREVIEW_EXPORT -> ManhwaPreviewExportView(
+                    "PREVIEW_EXPORT" -> ManhwaPreviewExportView(
                         project = currentProject,
                         pipeline = pipeline,
                         onUpdateProject = { currentProject = it },
@@ -236,12 +258,31 @@ fun ManhwaStudioScreen(viewModel: SoraMainViewModel) {
                             coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
                         }
                     )
-                    ManhwaSubTab.MODELS_FUSION -> ManhwaModelFusionView(
+                    "MODELS_FUSION" -> ManhwaModelFusionView(
                         modelConfig = modelConfig
+                    )
+                    "EXPORT_PRESETS" -> ManhwaExportPresetsFeatureView(
+                        project = currentProject,
+                        pipeline = pipeline,
+                        onExportSuccess = { msg ->
+                            coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
+                        }
                     )
                 }
             }
         }
+    }
+
+    // 12 Feature 3-Line Menu Drawer Modal
+    if (showMenuModal) {
+        StudioFeatureMenuModal(
+            studioName = "Manhwa Studio",
+            features = ManhwaStudioFeatureItems,
+            selectedFeatureId = selectedFeatureId,
+            accentColor = ElectricPink,
+            onFeatureSelected = { feature -> selectedFeatureId = feature.id },
+            onDismiss = { showMenuModal = false }
+        )
     }
 
     // Legal & Copyright Rights Disclaimer Dialog
@@ -336,58 +377,78 @@ fun ManhwaStudioScreen(viewModel: SoraMainViewModel) {
 }
 
 @Composable
-fun ManhwaStudioHeader(
+fun ManhwaExportPresetsFeatureView(
     project: ManhwaProject,
-    onNewProjectClick: () -> Unit,
-    onLegalInfoClick: () -> Unit,
-    onQuickRecapClick: () -> Unit
+    pipeline: ManhwaStudioPipeline,
+    onExportSuccess: (String) -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(GlassSurface)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "MANHWA STUDIO",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = ElectricPink,
-                    letterSpacing = 1.sp
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                SoraBadge(text = "RECAP ENGINE", color = NeonCyan)
-            }
-            Text(
-                text = "${project.title} • ${project.episodeTitle} (${project.scenes.size} scenes)",
-                fontSize = 11.sp,
-                color = TextSecondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+    var selectedPreset by remember { mutableStateOf("9:16 YouTube Shorts / TikTok (1080x1920)") }
+    var fpsSetting by remember { mutableIntStateOf(60) }
+    val presets = listOf(
+        "9:16 YouTube Shorts / TikTok (1080x1920)",
+        "16:9 Cinema Ultra HD (3840x2160)",
+        "1:1 Square Feed (1080x1080)",
+        "Animated WebP / GIF Sticker Pack"
+    )
+
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        item {
+            StudioFeatureSectionHeader(
+                title = "Video & Webtoon Multi-Format Exporter",
+                subtitle = "Batch encode vertical webtoon animations into viral 9:16 social videos or 4K master files",
+                badgeText = "EXPORT",
+                icon = Icons.Default.Share,
+                accentColor = ElectricPink
             )
         }
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onLegalInfoClick, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Default.Gavel, contentDescription = "Legal Notice", tint = WarningOrange)
-            }
-            IconButton(onClick = onNewProjectClick, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Default.AddCircleOutline, contentDescription = "New Project", tint = NeonCyan)
-            }
-            Button(
-                onClick = onQuickRecapClick,
-                colors = ButtonDefaults.buttonColors(containerColor = ElectricPink),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.testTag("btn_build_recap")
-            ) {
-                Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(14.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Build Recap", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        item {
+            StudioDetailsCard(
+                title = "Production Specifications & Format Ledger",
+                details = listOf(
+                    "Total Webtoon Panels" to "${project.panels.size} Panels",
+                    "Total Sequenced Scenes" to "${project.scenes.size} Scenes",
+                    "Estimated Render Time" to "~18 Seconds via Hardware Acceleration",
+                    "Target Framerate" to "$fpsSetting FPS Constant Framerate"
+                ),
+                accentColor = ElectricPink
+            )
+        }
+
+        item {
+            SoraGlassCard(borderColor = ElectricPink) {
+                Text("Select Master Export Preset", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = ElectricPink)
+                Spacer(Modifier.height(8.dp))
+
+                presets.forEach { pr ->
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .clickable { selectedPreset = pr },
+                        color = if (selectedPreset == pr) ElectricPink.copy(alpha = 0.2f) else GlassSurfaceVariant,
+                        shape = RoundedCornerShape(8.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, if (selectedPreset == pr) ElectricPink else CardBorder)
+                    ) {
+                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = selectedPreset == pr, onClick = { selectedPreset = pr })
+                            Spacer(Modifier.width(8.dp))
+                            Text(pr, fontSize = 12.sp, color = TextPrimary, fontWeight = FontWeight.Medium)
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(14.dp))
+                Button(
+                    onClick = { onExportSuccess("Successfully encoded $selectedPreset at $fpsSetting FPS.") },
+                    modifier = Modifier.fillMaxWidth().testTag("manhwa_master_export_btn"),
+                    colors = ButtonDefaults.buttonColors(containerColor = ElectricPink),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(Icons.Default.Download, contentDescription = null, tint = Color.White)
+                    Spacer(Modifier.width(8.dp))
+                    Text("⚡ Export Master Manhwa Video", color = Color.White, fontWeight = FontWeight.Bold)
+                }
             }
         }
     }
@@ -398,13 +459,15 @@ fun ManhwaTaskBanner(
     task: ManhwaTask,
     onDismiss: () -> Unit
 ) {
-    SoraGlassCard(
-        borderColor = if (task.isCompleted) AccentGreen else ElectricPink,
+    Surface(
+        color = GlassSurfaceVariant,
+        shape = RoundedCornerShape(12.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, ElectricPink.copy(alpha = 0.6f)),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .padding(horizontal = 14.dp, vertical = 6.dp)
     ) {
-        Column {
+        Column(modifier = Modifier.padding(12.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -414,173 +477,27 @@ fun ManhwaTaskBanner(
                     CircularProgressIndicator(
                         progress = { task.progressPercent / 100f },
                         modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.5.dp,
-                        color = if (task.isCompleted) AccentGreen else ElectricPink
+                        color = ElectricPink,
+                        strokeWidth = 2.5.dp
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = task.title, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = "RAM: ${task.ramUsageMb}MB • GPU: ${task.gpuUsagePercent}%",
-                        fontSize = 11.sp,
-                        color = NeonCyan
+                        text = task.title,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = TextSecondary, modifier = Modifier.size(16.dp))
-                    }
+                }
+                IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) {
+                    Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = TextSecondary, modifier = Modifier.size(16.dp))
                 }
             }
-
             Spacer(modifier = Modifier.height(4.dp))
-            Text(text = task.currentStep, fontSize = 12.sp, color = TextSecondary)
-            Spacer(modifier = Modifier.height(4.dp))
-            LinearProgressIndicator(
-                progress = { task.progressPercent / 100f },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(4.dp),
-                color = ElectricPink,
-                trackColor = Color(0xFF1E293B)
+            Text(
+                text = task.currentStep,
+                fontSize = 11.sp,
+                color = TextSecondary
             )
-        }
-    }
-}
-
-// -------------------------------------------------------------
-// 1. DASHBOARD VIEW
-// -------------------------------------------------------------
-@Composable
-fun ManhwaDashboardView(
-    project: ManhwaProject,
-    onNavigateTo: (ManhwaSubTab) -> Unit,
-    onStartPipeline: () -> Unit
-) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        // Hero Project Overview Card
-        item {
-            SoraGlassCard(borderColor = ElectricPink) {
-                Column {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(text = project.title, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = TextPrimary)
-                            Text(text = "${project.episodeTitle} • ${project.narrationStyle}", fontSize = 12.sp, color = NeonCyan)
-                        }
-                        SoraBadge(text = project.status.name, color = AccentGreen)
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text(text = project.description, fontSize = 13.sp, color = TextSecondary)
-
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        MetricBadge("Scenes", "${project.scenes.size} Active", Icons.Default.Movie)
-                        MetricBadge("Panels", "${project.panels.size} Detected", Icons.Default.GridView)
-                        MetricBadge("Duration", "${project.durationSeconds / 60}m ${project.durationSeconds % 60}s", Icons.Default.Timer)
-                        MetricBadge("FPS", "${project.fps} FPS", Icons.Default.Speed)
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(
-                            onClick = onStartPipeline,
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(containerColor = ElectricPink)
-                        ) {
-                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Run Full Pipeline", fontWeight = FontWeight.Bold)
-                        }
-                        OutlinedButton(
-                            onClick = { onNavigateTo(ManhwaSubTab.PREVIEW_EXPORT) },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(16.dp), tint = NeonCyan)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Preview Canvas", color = NeonCyan)
-                        }
-                    }
-                }
-            }
-        }
-
-        // Quick Navigation Grid
-        item {
-            SoraSectionHeader(title = "Production Modules", subtitle = "Manhwa Studio 20-Step AI Architecture", icon = Icons.Default.Hub)
-            Spacer(modifier = Modifier.height(8.dp))
-
-            val modules = listOf(
-                Triple("Import Manhwa", "SAF, Images, PDF, CBZ, ZIP", ManhwaSubTab.IMPORT),
-                Triple("Analyze Panels", "OCR, Speech Bubbles, Bounds", ManhwaSubTab.PANEL_ANALYSIS),
-                Triple("Characters", "Consistency Profiles & Voices", ManhwaSubTab.CHARACTERS),
-                Triple("Audio & VAD", "Speech-to-Text & Diarization", ManhwaSubTab.AUDIO_VOICE),
-                Triple("Sync & Action", "Action Audio Replacement", ManhwaSubTab.SYNC_ACTION),
-                Triple("Animation Studio", "Parallax, LipSync, Speed Lines", ManhwaSubTab.ANIMATION_CAMERA),
-                Triple("11-Track Timeline", "Multi-Track Video & SFX Editor", ManhwaSubTab.TIMELINE),
-                Triple("Recap & Story", "YouTube Recap & Continuation", ManhwaSubTab.RECAP_STORY),
-                Triple("Export & QC", "10-Point QC, MP4, SRT, VTT", ManhwaSubTab.PREVIEW_EXPORT),
-                Triple("Model Fusion", "Composite Pipeline Hub", ManhwaSubTab.MODELS_FUSION)
-            )
-
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                modules.chunked(2).forEach { rowItems ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        rowItems.forEach { (name, sub, tab) ->
-                            SoraGlassCard(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clickable { onNavigateTo(tab) },
-                                borderColor = GlassBorder
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(tab.icon, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(22.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Column {
-                                        Text(text = name, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                        Text(text = sub, fontSize = 10.sp, color = TextSecondary, maxLines = 1)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun MetricBadge(label: String, value: String, icon: ImageVector) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(Color(0xFF131824))
-            .padding(horizontal = 6.dp, vertical = 4.dp)
-    ) {
-        Icon(icon, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(12.dp))
-        Spacer(modifier = Modifier.width(4.dp))
-        Column {
-            Text(text = label, fontSize = 9.sp, color = TextSecondary)
-            Text(text = value, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
         }
     }
 }

@@ -42,6 +42,7 @@ import com.example.data.GalleryItemEntity
 import com.example.ui.SoraMainViewModel
 import com.example.ui.SoraTab
 import com.example.ui.components.*
+import com.example.ui.components.generation.DurationFormatters
 import com.example.ui.theme.*
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
@@ -221,7 +222,7 @@ fun GalleryCardItem(
             }
 
             // Center: Video Timecode overlay badge
-            val durSec = if (item.durationMs > 0) item.durationMs / 1000f else 5.0f
+            val durSecInt = if (item.durationMs > 0) (item.durationMs / 1000).toInt() else 5
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterHorizontally)
@@ -230,7 +231,7 @@ fun GalleryCardItem(
                     .padding(horizontal = 6.dp, vertical = 2.dp)
             ) {
                 Text(
-                    text = "▶ ${String.format("%.1fs", durSec)}",
+                    text = "▶ ${DurationFormatters.formatDisplay(durSecInt)}",
                     fontSize = 10.sp,
                     fontFamily = FontFamily.Monospace,
                     color = NeonCyan,

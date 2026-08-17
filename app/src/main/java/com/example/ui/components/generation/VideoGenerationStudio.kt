@@ -106,53 +106,11 @@ fun VideoGenerationStudio(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // 2. Duration Selector (Full Range 1s to 30min)
-            Column {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(text = "Target Video Duration", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
-                    Text(
-                        text = "${form.durationSec}s (${if (form.durationSec >= 60) "${form.durationSec / 60}m" else "${form.durationSec}s"})",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = NeonCyan
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    val durations = listOf(
-                        1 to "1s", 2 to "2s", 3 to "3s", 5 to "5s",
-                        10 to "10s", 15 to "15s", 30 to "30s", 60 to "1m",
-                        120 to "2m", 300 to "5m", 600 to "10m", 1800 to "30m"
-                    )
-                    items(durations.size) { i ->
-                        val (sec, label) = durations[i]
-                        val isSelected = form.durationSec == sec
-                        FilterChip(
-                            selected = isSelected,
-                            onClick = { viewModel.updateDuration(sec) },
-                            label = { Text(label, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = NeonPurple,
-                                selectedLabelColor = Color.White
-                            ),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.testTag("duration_chip_$sec")
-                        )
-                    }
-                }
-                if (form.durationSec > 10) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "⚡ Automatic Segmented Rendering: Will compute ${maxOf(1, form.durationSec / 5)} continuous temporal segments with auto-checkpointing.",
-                        fontSize = 10.5.sp,
-                        color = AccentGreen
-                    )
-                }
-            }
+            // 2. Video Duration Controller (Full Range 1 Second to 24+ Hours)
+            VideoDurationSelector(
+                viewModel = viewModel,
+                form = form
+            )
 
             Spacer(modifier = Modifier.height(12.dp))
 

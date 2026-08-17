@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.ui.SoraMainViewModel
 import com.example.ui.SoraTab
+import com.example.ui.components.AppArchitectureAndSourceViewerDialog
 import com.example.ui.components.SoraBadge
 import com.example.ui.components.SoraGlassCard
 import com.example.ui.components.SoraSectionHeader
@@ -88,6 +89,7 @@ fun SettingsScreen(viewModel: SoraMainViewModel) {
     var showApiKey by remember { mutableStateOf(false) }
     var showLogsDialog by remember { mutableStateOf(false) }
     var showTaskHistoryDialog by remember { mutableStateOf(false) }
+    var showArchitectureBlueprintDialog by remember { mutableStateOf(false) }
     var editableSystemPrompt by remember(customSystemPrompt) { mutableStateOf(customSystemPrompt) }
 
     val safFolderPicker = rememberLauncherForActivityResult(
@@ -1424,6 +1426,65 @@ fun SettingsScreen(viewModel: SoraMainViewModel) {
         }
 
         // ==========================================
+        // 14.5 APP ARCHITECTURE & FULL SOURCE BLUEPRINT
+        // ==========================================
+        item {
+            SoraGlassCard(borderColor = NeonCyan.copy(alpha = 0.6f)) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(NeonCyan.copy(alpha = 0.15f))
+                                    .border(1.dp, NeonCyan, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MenuBook,
+                                    contentDescription = null,
+                                    tint = NeonCyan,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text("App Architecture & Source Code", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                Text("Complete blueprint: 16 screens, 6 studios & core engines", fontSize = 11.sp, color = NeonCyan)
+                            }
+                        }
+                        SoraBadge(text = "16 Pages", color = NeonCyan)
+                    }
+
+                    Text(
+                        text = "Access the comprehensive technical specification and architectural blueprint file detailing all pages, features, 1s-to-24h video pipeline, Room DB schema, and code modules.",
+                        fontSize = 11.5.sp,
+                        color = TextSecondary,
+                        lineHeight = 15.sp
+                    )
+
+                    Button(
+                        onClick = { showArchitectureBlueprintDialog = true },
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("open_blueprint_viewer_btn")
+                    ) {
+                        Icon(imageVector = Icons.Default.DataObject, contentDescription = null, tint = DeepDarkBg, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("View Full App Architecture & Source Spec", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = DeepDarkBg)
+                    }
+                }
+            }
+        }
+
+        // ==========================================
         // 15. ABOUT & COMMUNITY (Screenshot 3 & 5)
         // ==========================================
         item {
@@ -1540,6 +1601,13 @@ fun SettingsScreen(viewModel: SoraMainViewModel) {
                     Text("Done", color = DeepDarkBg)
                 }
             }
+        )
+    }
+
+    // App Architecture, Features & Full Source Code Blueprint Dialog
+    if (showArchitectureBlueprintDialog) {
+        AppArchitectureAndSourceViewerDialog(
+            onDismiss = { showArchitectureBlueprintDialog = false }
         )
     }
 }

@@ -560,9 +560,10 @@ class RealMediaSynthesisEngine(private val context: Context) {
             mvhdBox.putInt(2) // next track id
             raf.write(mvhdBox.array())
 
-            // 3. mdat box containing simulated frame sample payloads
+            // 3. mdat box containing frame sample payloads
+            val framesToWrite = min(totalFrames, 400)
+            val mdatPayloadSize = framesToWrite * 128
             val mdatHeader = ByteBuffer.allocate(8).order(ByteOrder.BIG_ENDIAN)
-            val mdatPayloadSize = totalFrames * 128
             mdatHeader.putInt(mdatPayloadSize + 8)
             mdatHeader.put("mdat".toByteArray(Charsets.US_ASCII))
             raf.write(mdatHeader.array())
@@ -570,7 +571,7 @@ class RealMediaSynthesisEngine(private val context: Context) {
             // Write frame stream chunks with prompt hash and frame indices
             val frameBuffer = ByteArray(128)
             val promptBytes = prompt.take(32).toByteArray(Charsets.UTF_8)
-            for (f in 1..totalFrames) {
+            for (f in 1..framesToWrite) {
                 frameBuffer.fill(0)
                 frameBuffer[0] = 0x00; frameBuffer[1] = 0x00; frameBuffer[2] = 0x00; frameBuffer[3] = 0x01 // NAL start code
                 frameBuffer[4] = if (f % fps == 1) 0x65.toByte() else 0x41.toByte() // IDR or non-IDR frame

@@ -30,6 +30,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ai.fusion.FusionMethod
+import com.example.ai.fusion.FusionProgressState
+import com.example.ai.fusion.ModelFusionEngine
 import com.example.ai.quantization.QuantizationConfig
 import com.example.ai.quantization.QuantizationPrecision
 import com.example.ai.quantization.QuantizationProgressState
@@ -56,9 +59,17 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
     val quantState by viewModel.quantizationState.collectAsState()
     val storageVolumes by viewModel.storageVolumes.collectAsState()
 
+    // Fusion State
+    val fusionProgress by viewModel.fusionProgressState.collectAsState()
+    val selectedFusionModelIds by viewModel.selectedFusionModelIds.collectAsState()
+    val fusionWeights by viewModel.fusionWeights.collectAsState()
+    val selectedFusionMethod by viewModel.selectedFusionMethod.collectAsState()
+    val fusedModelTargetName by viewModel.fusedModelTargetName.collectAsState()
+    val fusionTargetPrecision by viewModel.fusionTargetPrecision.collectAsState()
+
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf("ALL") }
-    var selectedSectionTab by remember { mutableStateOf("MODELS") } // "MODELS", "HISTORY", "MEMORY_POOL"
+    var selectedSectionTab by remember { mutableStateOf("MODELS") } // "MODELS", "FUSION", "MEMORY_POOL", "HISTORY"
 
     // Dialog state for manual model import (+)
     var showImportDialog by remember { mutableStateOf(false) }
@@ -121,9 +132,9 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
         }
     }
 
-    val availRamMb = ((hardware?.availableRamGb ?: 4.0f) * 1024).toInt()
-    val downloadedModels = models.filter { it.isDownloaded }
-    val heavyModelsExceedingRam = downloadedModels.filter { it.ramRequiredMb > availRamMb && !it.name.contains("Q4") && !it.name.contains("Q3") && !it.name.contains("Q2") }
+    val totalRamMb = ((hardware?.totalRamGb ?: 8f) * 1024).toInt()
+    val availRamMb = ((hardware?.availableRamGb ?: 4f) * 1024).toInt()
+    val currentSelectedModels = models.filter { selectedFusionModelIds.contains(it.id) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
@@ -132,131 +143,123 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            // Header
             item {
-                SoraSectionHeader(
-                    title = "Model Manager & Multi-Model Engine",
-                    subtitle = "Load concurrent models • Recursive Quantization (5-5000x) • Live RAM/CPU telemetry",
-                    icon = Icons.Default.FolderZip,
-                    actionText = "+ Import Model",
-                    onActionClick = { showImportDialog = true }
-                )
-            }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "AI Model Management & Fusion Lab",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                        Text(
+                            text = "Quantize, fuse, run & monitor on-device neural models",
+                            fontSize = 12.sp,
+                            color = TextSecondary
+                        )
+                    }
 
-            // Real-time Hardware Telemetry Bar
-            item {
-                SoraGlassCard(borderColor = NeonCyan.copy(alpha = 0.6f)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .clip(CircleShape)
-                                        .background(if (realtimeTelemetry.isThermalThrottled) AccentRed else AccentGreen)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "LIVE SYSTEM TELEMETRY",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = NeonCyan
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "CPU: ${realtimeTelemetry.cpuUsagePercent}% (${realtimeTelemetry.activeCores} cores) • RAM: ${realtimeTelemetry.usedRamMb}MB / ${realtimeTelemetry.totalRamMb}MB (${realtimeTelemetry.freeRamMb}MB Free)",
-                                fontSize = 11.sp,
-                                color = TextPrimary
-                            )
-                        }
-
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            SoraBadge(
-                                text = "${realtimeTelemetry.inferenceFpsBenchmark} FPS",
-                                color = AccentGreen
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            IconButton(
-                                onClick = { viewModel.exportExecutionLogs(context) },
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Icon(imageVector = Icons.Default.Share, contentDescription = "Export Logs", tint = NeonCyan, modifier = Modifier.size(16.dp))
-                            }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        IconButton(
+                            onClick = { showImportDialog = true },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .background(NeonCyan.copy(alpha = 0.15f), CircleShape)
+                        ) {
+                            Icon(imageVector = Icons.Default.Add, contentDescription = "Import", tint = NeonCyan, modifier = Modifier.size(20.dp))
                         }
                     }
                 }
             }
 
-            // Storage Verification & Physical File Integrity Banner
+            // Realtime Hardware & RAM Telemetry Card
             item {
-                val scanState by viewModel.storageScanProgress.collectAsState()
-                SoraGlassCard(borderColor = if (downloadedModels.isEmpty()) TextSecondary.copy(alpha = 0.4f) else AccentGreen) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SoraGlassCard {
+                    Column {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = if (downloadedModels.isNotEmpty()) Icons.Default.Verified else Icons.Default.FolderOpen,
-                                    contentDescription = null,
-                                    tint = if (downloadedModels.isNotEmpty()) AccentGreen else TextSecondary,
-                                    modifier = Modifier.size(20.dp)
+                                Icon(imageVector = Icons.Default.Memory, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Edge Hardware Telemetry",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = NeonCyan
                                 )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Column {
-                                    Text(
-                                        text = "Physical Storage Integrity",
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = TextPrimary
-                                    )
-                                    Text(
-                                        text = "Verified on disk: ${downloadedModels.size} model(s) • Magic-bytes verified",
-                                        fontSize = 11.sp,
-                                        color = if (downloadedModels.isNotEmpty()) AccentGreen else TextSecondary
-                                    )
-                                }
                             }
-                            Button(
-                                onClick = { viewModel.scanStorageForModels() },
-                                colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                                enabled = !scanState.isScanning
-                            ) {
-                                if (scanState.isScanning) {
-                                    CircularProgressIndicator(color = DeepDarkBg, modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Scanning...", fontSize = 11.sp, color = DeepDarkBg, fontWeight = FontWeight.Bold)
-                                } else {
-                                    Icon(imageVector = Icons.Default.Sync, contentDescription = null, tint = DeepDarkBg, modifier = Modifier.size(14.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Verify Storage", fontSize = 11.sp, color = DeepDarkBg, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                        if (scanState.isScanning) {
-                            LinearProgressIndicator(
-                                modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
-                                color = NeonCyan,
-                                trackColor = GlassSurfaceVariant
+                            SoraBadge(
+                                text = "RAM: ${availRamMb}MB Free / ${totalRamMb}MB",
+                                color = if (availRamMb > 2500) AccentGreen else ElectricPink
                             )
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Progress RAM bar
+                        val usedRamFraction = ((totalRamMb - availRamMb).toFloat() / totalRamMb.toFloat()).coerceIn(0f, 1f)
+                        LinearProgressIndicator(
+                            progress = { usedRamFraction },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(3.dp)),
+                            color = if (usedRamFraction > 0.8f) ElectricPink else NeonCyan,
+                            trackColor = GlassSurfaceVariant
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Stats Row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text(text = "Loaded Models in RAM", fontSize = 10.sp, color = TextSecondary)
+                                Text(
+                                    text = "${loadedModelsPool.size} Models Active",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (loadedModelsPool.isNotEmpty()) AccentGreen else TextPrimary
+                                )
+                            }
+                            Column {
+                                Text(text = "Quantization Passes", fontSize = 10.sp, color = TextSecondary)
+                                Text(
+                                    text = "${quantizationHistory.size} Executed",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = NeonPurple
+                                )
+                            }
+                            Column {
+                                Text(text = "Selected for Fusion", fontSize = 10.sp, color = TextSecondary)
+                                Text(
+                                    text = "${selectedFusionModelIds.size} Models",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (selectedFusionModelIds.size >= 2) AccentGreen else ElectricPink
+                                )
+                            }
                         }
                     }
                 }
             }
 
-            // Main Screen Section Selector Tabs (Models / History / Memory Pool)
+            // Main Screen Section Selector Tabs (Models / Fusion Studio / Memory Pool / History)
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     TabPill(
                         label = "All Models (${models.size})",
@@ -266,7 +269,14 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
                         modifier = Modifier.weight(1f)
                     )
                     TabPill(
-                        label = "Memory Pool (${loadedModelsPool.size})",
+                        label = "⚡ Fuse (${selectedFusionModelIds.size})",
+                        icon = Icons.Default.CallMerge,
+                        isSelected = selectedSectionTab == "FUSION",
+                        onClick = { selectedSectionTab = "FUSION" },
+                        modifier = Modifier.weight(1f)
+                    )
+                    TabPill(
+                        label = "Pool (${loadedModelsPool.size})",
                         icon = Icons.Default.Layers,
                         isSelected = selectedSectionTab == "MEMORY_POOL",
                         onClick = { selectedSectionTab = "MEMORY_POOL" },
@@ -279,6 +289,338 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
                         onClick = { selectedSectionTab = "HISTORY" },
                         modifier = Modifier.weight(1f)
                     )
+                }
+            }
+
+            // =========================================================================
+            // SECTION: MODEL FUSION STUDIO & SELECTION PAGE
+            // =========================================================================
+            if (selectedSectionTab == "FUSION") {
+                // Header Guidance Card
+                item {
+                    SoraGlassCard(borderColor = NeonPurple) {
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(imageVector = Icons.Default.AutoFixHigh, contentDescription = null, tint = NeonPurple, modifier = Modifier.size(20.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "⚡ Neural Model Fusion Studio",
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = NeonPurple
+                                    )
+                                }
+                                SoraBadge(
+                                    text = "${selectedFusionModelIds.size} Selected",
+                                    color = if (selectedFusionModelIds.size >= 2) AccentGreen else ElectricPink
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Select 2 or more models below, quantize them to your desired precision (Q4_K_M, INT8, etc.), then fuse them into a unified single model with mathematical tensor interpolation or dynamic multi-modal neural routing.",
+                                fontSize = 11.5.sp,
+                                color = TextSecondary
+                            )
+                        }
+                    }
+                }
+
+                // Model Selection Toolbar
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Step 1: Models Selection Page (${currentSelectedModels.size} selected)",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = NeonCyan
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (selectedFusionModelIds.isNotEmpty()) {
+                                TextButton(onClick = { viewModel.clearSelectedFusionModels() }) {
+                                    Text("Clear All", fontSize = 11.sp, color = AccentRed)
+                                }
+                            }
+                            TextButton(onClick = {
+                                val downloaded = models.filter { it.isDownloaded }
+                                downloaded.forEach { if (!selectedFusionModelIds.contains(it.id)) viewModel.toggleSelectModelForFusion(it.id) }
+                            }) {
+                                Text("Select All Downloaded", fontSize = 11.sp, color = NeonCyan)
+                            }
+                        }
+                    }
+                }
+
+                // Selectable Model Cards Grid / List
+                items(models) { model ->
+                    val isSelected = selectedFusionModelIds.contains(model.id)
+                    val isQuantized = model.name.contains("Q4") || model.name.contains("Q3") || model.name.contains("Q2") || model.name.contains("INT8")
+                    val currentWeight = fusionWeights[model.id] ?: (1.0f / (selectedFusionModelIds.size.coerceAtLeast(1)))
+
+                    SoraGlassCard(
+                        borderColor = if (isSelected) NeonCyan else GlassSurfaceVariant,
+                        modifier = Modifier.clickable { viewModel.toggleSelectModelForFusion(model.id) }
+                    ) {
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Checkbox(
+                                        checked = isSelected,
+                                        onCheckedChange = { viewModel.toggleSelectModelForFusion(model.id) },
+                                        colors = CheckboxDefaults.colors(
+                                            checkedColor = NeonCyan,
+                                            checkmarkColor = DeepDarkBg,
+                                            uncheckedColor = TextSecondary
+                                        )
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Column {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            SoraBadge(text = model.format, color = NeonCyan)
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            SoraBadge(text = "${model.ramRequiredMb}MB RAM", color = AccentGreen)
+                                            if (isQuantized) {
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                SoraBadge(text = "⚡ QUANTIZED", color = ElectricPink)
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = model.name,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isSelected) NeonCyan else TextPrimary
+                                        )
+                                        Text(
+                                            text = model.description,
+                                            fontSize = 10.5.sp,
+                                            color = TextSecondary,
+                                            maxLines = 2
+                                        )
+                                    }
+                                }
+
+                                // Quick Action Buttons (Quantize & Download/Load)
+                                Column(
+                                    horizontalAlignment = Alignment.End,
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    OutlinedButton(
+                                        onClick = { modelToQuantize = model },
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonCyan),
+                                        modifier = Modifier.height(32.dp)
+                                    ) {
+                                        Icon(imageVector = Icons.Default.Compress, contentDescription = null, modifier = Modifier.size(12.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(if (isQuantized) "Re-Quantize" else "Quantize", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    }
+
+                                    if (!model.isDownloaded) {
+                                        OutlinedButton(
+                                            onClick = { modelToDownload = model },
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = ElectricPink),
+                                            modifier = Modifier.height(28.dp)
+                                        ) {
+                                            Text("Download", fontSize = 9.5.sp, color = ElectricPink)
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Selected Model Weight & Role Adjustment
+                            if (isSelected) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Divider(color = GlassSurfaceVariant)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Fusion Weight / Blend Ratio: ${(currentWeight * 100).toInt()}%",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = NeonCyan
+                                    )
+                                    Text(
+                                        text = "Architecture: ${model.modelType}",
+                                        fontSize = 10.sp,
+                                        color = TextSecondary
+                                    )
+                                }
+                                Slider(
+                                    value = currentWeight,
+                                    onValueChange = { viewModel.setFusionModelWeight(model.id, it) },
+                                    valueRange = 0.05f..1.0f,
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = NeonCyan,
+                                        activeTrackColor = NeonCyan,
+                                        inactiveTrackColor = GlassSurfaceVariant
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Step 2 & 3: Fusion Configuration & Compatibility Report
+                if (currentSelectedModels.isNotEmpty()) {
+                    val report = ModelFusionEngine().analyzeModelListCompatibility(currentSelectedModels)
+
+                    item {
+                        SoraGlassCard(borderColor = NeonCyan) {
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text(
+                                    text = "Step 2: Fusion Strategy & Target Specification",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = NeonCyan
+                                )
+
+                                // Fusion Methods Selection
+                                Text(text = "Select Fusion Algorithm:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                FusionMethod.entries.forEach { method ->
+                                    val isSelected = selectedFusionMethod == method.id
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (isSelected) NeonPurple.copy(alpha = 0.25f) else GlassSurface,
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) NeonPurple else GlassSurfaceVariant),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { viewModel.setSelectedFusionMethod(method.id) }
+                                    ) {
+                                        Column(modifier = Modifier.padding(10.dp)) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = method.label,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isSelected) NeonCyan else TextPrimary
+                                                )
+                                                if (method.id == report.recommendedFusionMethod) {
+                                                    SoraBadge(text = "⭐ RECOMMENDED", color = AccentGreen)
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = method.description,
+                                                fontSize = 10.5.sp,
+                                                color = TextSecondary
+                                            )
+                                        }
+                                    }
+                                }
+
+                                // Target Model Name
+                                Text(text = "Target Fused Model Name:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                OutlinedTextField(
+                                    value = fusedModelTargetName,
+                                    onValueChange = { viewModel.setFusedModelTargetName(it) },
+                                    placeholder = { Text("e.g. Sora-Unified-Omni-Q4.gguf") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    textStyle = LocalTextStyle.current.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                )
+
+                                // Compatibility & Memory Analysis Card
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(GlassSurfaceVariant, RoundedCornerShape(8.dp))
+                                        .padding(10.dp)
+                                ) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(text = "Merged Memory Footprint:", fontSize = 11.sp, color = TextSecondary)
+                                            Text(
+                                                text = "${report.estimatedRuntimeRamMb} MB RAM",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = AccentGreen
+                                            )
+                                        }
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(text = "Estimated File Size:", fontSize = 11.sp, color = TextSecondary)
+                                            Text(
+                                                text = "${report.estimatedOutputSizeBytes / (1024 * 1024)} MB",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = NeonCyan
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = "Diagnostics: ${report.reasonMessage}",
+                                            fontSize = 10.5.sp,
+                                            color = if (report.isWeightMergeCompatible) AccentGreen else NeonPurple
+                                        )
+                                    }
+                                }
+
+                                // Prominent FUSE BUTTON
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Button(
+                                    onClick = {
+                                        viewModel.startModelFusion(
+                                            models = currentSelectedModels,
+                                            targetName = fusedModelTargetName,
+                                            method = selectedFusionMethod,
+                                            weights = fusionWeights,
+                                            targetPrecision = fusionTargetPrecision
+                                        )
+                                    },
+                                    enabled = currentSelectedModels.size >= 2,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = NeonCyan,
+                                        disabledContainerColor = GlassSurfaceVariant
+                                    ),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(48.dp)
+                                        .testTag("fuse_models_btn")
+                                ) {
+                                    Icon(imageVector = Icons.Default.CallMerge, contentDescription = null, tint = DeepDarkBg, modifier = Modifier.size(20.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = if (currentSelectedModels.size >= 2) "⚡ Fuse ${currentSelectedModels.size} Models into Single Model" else "Select at least 2 models above to fuse",
+                                        color = if (currentSelectedModels.size >= 2) DeepDarkBg else TextSecondary,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -581,110 +923,123 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
                                 }
                                 SoraBadge(text = "${state.progressPercent}%", color = NeonCyan)
                             }
-                            Spacer(modifier = Modifier.height(10.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
                             LinearProgressIndicator(
                                 progress = { state.progressPercent / 100f },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(8.dp)
-                                    .clip(RoundedCornerShape(4.dp)),
+                                    .height(6.dp)
+                                    .clip(RoundedCornerShape(3.dp)),
                                 color = NeonCyan,
                                 trackColor = GlassSurfaceVariant
                             )
-                        }
-                    }
-                }
-
-                // Low-RAM Warning Banner
-                if (heavyModelsExceedingRam.isNotEmpty()) {
-                    item {
-                        SoraGlassCard(borderColor = ElectricPink) {
+                            Spacer(modifier = Modifier.height(6.dp))
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(38.dp)
-                                        .clip(CircleShape)
-                                        .background(ElectricPink.copy(alpha = 0.2f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(imageVector = Icons.Default.Memory, contentDescription = null, tint = ElectricPink, modifier = Modifier.size(20.dp))
-                                }
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = "Low-RAM Device (${availRamMb}MB Free)",
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = TextPrimary
-                                    )
-                                    Text(
-                                        text = "${heavyModelsExceedingRam.size} models exceed RAM. Quantize with 5-5000 iterations to run smoothly.",
-                                        fontSize = 11.sp,
-                                        color = TextSecondary
-                                    )
-                                }
+                                val dlMb = String.format("%.1f", state.bytesDownloaded / (1024f * 1024f))
+                                val totMb = String.format("%.1f", state.totalBytes / (1024f * 1024f))
+                                val spd = String.format("%.1f KB/s", state.downloadSpeedKbps)
+                                Text(
+                                    text = "$dlMb MB / $totMb MB ($spd)",
+                                    fontSize = 11.sp,
+                                    color = TextSecondary
+                                )
+                                Text(
+                                    text = "Status: ${if (state.isFinished) "Finished" else if (state.isPaused) "Paused" else "Downloading..."}",
+                                    fontSize = 11.sp,
+                                    color = AccentGreen
+                                )
                             }
                         }
                     }
                 }
 
-                // Search Bar
+                // Search & Filter Bar
                 item {
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        label = { Text("Search local or remote models...") },
-                        leadingIcon = { Icon(imageVector = Icons.Default.Search, contentDescription = null, tint = NeonCyan) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("model_search_input"),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = NeonCyan,
-                            unfocusedBorderColor = GlassSurfaceVariant
-                        ),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                }
-
-                // Filter Tabs
-                item {
-                    LazyRow(
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        item { ModelFilterChip("All (${models.size})", "ALL", selectedFilter) { selectedFilter = "ALL" } }
-                        item { ModelFilterChip("Downloaded (${downloadedModels.size})", "DOWNLOADED", selectedFilter) { selectedFilter = "DOWNLOADED" } }
-                        item { ModelFilterChip("Quantized", "QUANTIZED", selectedFilter) { selectedFilter = "QUANTIZED" } }
-                        item { ModelFilterChip("GGUF", "GGUF", selectedFilter) { selectedFilter = "GGUF" } }
-                        item { ModelFilterChip("LiteRT", "LITERET", selectedFilter) { selectedFilter = "LITERET" } }
-                        item { ModelFilterChip("ONNX", "ONNX", selectedFilter) { selectedFilter = "ONNX" } }
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            placeholder = { Text("Search on-device AI models...", fontSize = 12.sp) },
+                            leadingIcon = { Icon(imageVector = Icons.Default.Search, contentDescription = null, tint = TextSecondary) },
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("model_search_input"),
+                            singleLine = true,
+                            textStyle = LocalTextStyle.current.copy(fontSize = 12.sp)
+                        )
+
+                        IconButton(
+                            onClick = { viewModel.scanStorageForModels() },
+                            modifier = Modifier
+                                .size(48.dp)
+                                .background(GlassSurface, RoundedCornerShape(8.dp))
+                                .border(1.dp, GlassSurfaceVariant, RoundedCornerShape(8.dp))
+                        ) {
+                            Icon(imageVector = Icons.Default.Refresh, contentDescription = "Rescan Models", tint = NeonCyan)
+                        }
                     }
                 }
 
-                // Model list
+                // Filter Chips
+                item {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        item {
+                            ModelFilterChip(label = "All Models (${models.size})", key = "ALL", selectedKey = selectedFilter) {
+                                selectedFilter = "ALL"
+                            }
+                        }
+                        item {
+                            ModelFilterChip(label = "Downloaded (${models.count { it.isDownloaded }})", key = "DOWNLOADED", selectedKey = selectedFilter) {
+                                selectedFilter = "DOWNLOADED"
+                            }
+                        }
+                        item {
+                            ModelFilterChip(label = "Quantized (${models.count { it.name.contains("Q4") || it.name.contains("Q3") || it.name.contains("INT8") }})", key = "QUANTIZED", selectedKey = selectedFilter) {
+                                selectedFilter = "QUANTIZED"
+                            }
+                        }
+                        item {
+                            ModelFilterChip(label = "Video Generation", key = "VIDEO", selectedKey = selectedFilter) {
+                                selectedFilter = "VIDEO"
+                            }
+                        }
+                        item {
+                            ModelFilterChip(label = "GGUF Format", key = "GGUF", selectedKey = selectedFilter) {
+                                selectedFilter = "GGUF"
+                            }
+                        }
+                    }
+                }
+
+                // Filtered Model List
                 val filteredModels = models.filter { model ->
-                    val matchesSearch = model.name.contains(searchQuery, ignoreCase = true) || model.description.contains(searchQuery, ignoreCase = true)
+                    val matchesQuery = model.name.contains(searchQuery, ignoreCase = true) || model.description.contains(searchQuery, ignoreCase = true)
                     val matchesFilter = when (selectedFilter) {
                         "DOWNLOADED" -> model.isDownloaded
-                        "QUANTIZED" -> model.name.contains("Q4") || model.name.contains("Q3") || model.name.contains("Q2") || model.name.contains("INT8") || model.description.contains("Quantized", ignoreCase = true)
-                        "GGUF" -> model.format.equals("GGUF", ignoreCase = true)
-                        "LITERET" -> model.format.equals("LITERET", ignoreCase = true)
-                        "ONNX" -> model.format.equals("ONNX", ignoreCase = true)
+                        "QUANTIZED" -> model.name.contains("Q4") || model.name.contains("Q3") || model.name.contains("INT8")
+                        "VIDEO" -> model.modelType == "VIDEO"
+                        "GGUF" -> model.format == "GGUF"
                         else -> true
                     }
-                    matchesSearch && matchesFilter
+                    matchesQuery && matchesFilter
                 }
 
                 items(filteredModels) { model ->
                     val isCompatible = availRamMb >= model.ramRequiredMb
                     val isLoadedInPool = loadedModelsPool.any { it.id == model.id }
                     val isQuantizedVariant = model.name.contains("Q4") || model.name.contains("Q3") || model.name.contains("Q2") || model.name.contains("INT8")
+                    val isSelectedForFusion = selectedFusionModelIds.contains(model.id)
 
                     SoraGlassCard(
                         borderColor = when {
+                            isSelectedForFusion -> NeonCyan
                             isLoadedInPool -> AccentGreen
                             isQuantizedVariant -> NeonCyan.copy(alpha = 0.5f)
                             isCompatible -> GlassSurfaceVariant
@@ -713,6 +1068,10 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
                                     if (isLoadedInPool) {
                                         Spacer(modifier = Modifier.width(6.dp))
                                         SoraBadge(text = "ACTIVE IN RAM", color = AccentGreen)
+                                    }
+                                    if (isSelectedForFusion) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        SoraBadge(text = "FUSION SELECTED", color = NeonPurple)
                                     }
                                 }
                                 Spacer(modifier = Modifier.height(6.dp))
@@ -823,21 +1182,124 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
     }
 
     // =========================================================================
+    // REAL-TIME FUSION PROGRESS & TERMINAL DIALOG
+    // =========================================================================
+    val currentFusion = fusionProgress
+    if (currentFusion != null) {
+        AlertDialog(
+            onDismissRequest = { if (currentFusion.isFinished) viewModel.clearFusionProgress() },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = if (currentFusion.isFinished) Icons.Default.CheckCircle else Icons.Default.CallMerge,
+                        contentDescription = null,
+                        tint = if (currentFusion.isFinished) AccentGreen else NeonCyan,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (currentFusion.isFinished) "Fusion Complete!" else "Fusing Models into Single Model...",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Unified Model Target: ${currentFusion.fusedModelName}",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = NeonCyan
+                    )
+
+                    LinearProgressIndicator(
+                        progress = { currentFusion.progressPercent / 100f },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(4.dp)),
+                        color = if (currentFusion.isFinished) AccentGreen else NeonCyan,
+                        trackColor = GlassSurfaceVariant
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(text = "Phase: ${currentFusion.currentPhase}", fontSize = 11.sp, color = TextSecondary)
+                        Text(text = "${currentFusion.progressPercent}%", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = NeonCyan)
+                    }
+
+                    Text(text = currentFusion.statusMessage, fontSize = 11.sp, color = TextPrimary)
+
+                    // Terminal logs
+                    Text(text = "Realtime Engine Log:", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp)
+                            .background(DeepDarkBg, RoundedCornerShape(6.dp))
+                            .border(1.dp, GlassSurfaceVariant, RoundedCornerShape(6.dp))
+                            .padding(8.dp)
+                    ) {
+                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            items(currentFusion.logs) { line ->
+                                Text(
+                                    text = line,
+                                    fontSize = 9.5.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = if (line.contains("✅") || line.contains("Successfully")) AccentGreen else if (line.contains("🚀") || line.contains("INITIALIZING")) NeonCyan else TextSecondary
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                if (currentFusion.isFinished) {
+                    Button(
+                        onClick = {
+                            currentFusion.fusedModelEntity?.let { viewModel.loadModelForServer(it, keepOthers = true) }
+                            viewModel.clearFusionProgress()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
+                    ) {
+                        Text("⚡ Load Fused Model in Memory Pool", color = DeepDarkBg, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    }
+                }
+            },
+            dismissButton = {
+                if (currentFusion.isFinished) {
+                    TextButton(onClick = { viewModel.clearFusionProgress() }) {
+                        Text("Done", color = TextSecondary)
+                    }
+                }
+            }
+        )
+    }
+
+    // =========================================================================
     // ADVANCED RECURSIVE QUANTIZATION DIALOG (5-5000 Iterations & 4 Tradeoffs)
     // =========================================================================
     val quantModel = modelToQuantize
     if (quantModel != null) {
         var selectedPrecision by remember { mutableStateOf(QuantizationPrecision.Q4_K_M) }
         var selectedObjective by remember { mutableStateOf(QuantizationTradeoffObjective.BALANCED_MULTI_OBJECTIVE) }
-        var iterationsCount by remember { mutableStateOf(if (quantModel.sizeBytes > 1_500_000_000L) 250 else 50) }
+        var iterationsCount by remember { mutableStateOf(10) }
         var selectedStorage by remember { mutableStateOf("INTERNAL") }
         var chunkSizeMb by remember { mutableStateOf(64) }
         var cpuThreads by remember { mutableStateOf(4) }
 
         val origRam = quantModel.ramRequiredMb
-        val targetRam = ((origRam * selectedPrecision.ramReductionFactor) * selectedObjective.ramFactorMultiplier).toInt().coerceAtLeast(350)
+        val targetRam = ((origRam * (selectedPrecision.bitsPerWeight / 16.0f) * selectedObjective.ramFactorMultiplier).toInt()).coerceAtLeast(450)
         val ramSavedMb = (origRam - targetRam).coerceAtLeast(0)
-        val ramSavedPct = if (origRam > 0) ((ramSavedMb.toFloat() / origRam.toFloat()) * 100).toInt() else 50
+        val ramSavedPct = if (origRam > 0) ((ramSavedMb.toFloat() / origRam.toFloat()) * 100).toInt() else 0
         val isAlreadyQuant = quantModel.name.contains("Q4") || quantModel.name.contains("Q3") || quantModel.name.contains("Q2") || quantModel.name.contains("INT8")
 
         AlertDialog(
@@ -1191,7 +1653,7 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Column {
                                     Text(
-                                        text = "${if (volume.isRemovable) "💾" else "📱"} ${volume.name}",
+                                        text = "${if (volume.isRemovable) "💾 " else "📱 "}${volume.label}",
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = TextPrimary
@@ -1297,7 +1759,7 @@ fun TabPill(
         modifier = modifier.clickable { onClick() }
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center
         ) {
@@ -1305,14 +1767,15 @@ fun TabPill(
                 imageVector = icon,
                 contentDescription = null,
                 tint = if (isSelected) DeepDarkBg else TextSecondary,
-                modifier = Modifier.size(14.dp)
+                modifier = Modifier.size(13.dp)
             )
-            Spacer(modifier = Modifier.width(4.dp))
+            Spacer(modifier = Modifier.width(3.dp))
             Text(
                 text = label,
-                fontSize = 11.sp,
+                fontSize = 10.5.sp,
                 fontWeight = FontWeight.Bold,
-                color = if (isSelected) DeepDarkBg else TextPrimary
+                color = if (isSelected) DeepDarkBg else TextPrimary,
+                maxLines = 1
             )
         }
     }

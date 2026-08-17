@@ -26,6 +26,7 @@ import com.example.data.GenerationJobEntity
 import com.example.ui.SoraMainViewModel
 import com.example.ui.SoraTab
 import com.example.ui.components.*
+import com.example.ui.components.generation.DurationFormatters
 import com.example.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.*
@@ -254,7 +255,7 @@ fun TaskQueueScreen(viewModel: SoraMainViewModel) {
                     ) {
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             SoraBadge(text = runningJob.resolution, color = NeonCyan)
-                            SoraBadge(text = "${runningJob.durationSeconds}s", color = NeonPurple)
+                            SoraBadge(text = DurationFormatters.formatDisplay(runningJob.durationSeconds), color = NeonPurple)
                             SoraBadge(text = runningJob.backendUsed, color = ElectricPink)
                         }
                         OutlinedButton(
@@ -447,7 +448,7 @@ fun TaskQueueScreen(viewModel: SoraMainViewModel) {
                 ) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         SoraBadge(text = job.resolution, color = NeonCyan)
-                        SoraBadge(text = "${job.durationSeconds}s", color = NeonPurple)
+                        SoraBadge(text = DurationFormatters.formatDisplay(job.durationSeconds), color = NeonPurple)
                         SoraBadge(text = job.mode, color = ElectricPink)
                     }
 
@@ -577,7 +578,7 @@ fun BatchJobCreatorDialog(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(text = "Duration / Clip", fontSize = 11.sp, color = TextSecondary)
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            items(listOf(1, 5, 10, 30)) { sec ->
+                            items(listOf(1 to "1s", 5 to "5s", 15 to "15s", 30 to "30s", 60 to "1m", 300 to "5m", 1800 to "30m", 3600 to "1h", 7200 to "2h")) { (sec, label) ->
                                 val isSelected = selectedDuration == sec
                                 Box(
                                     modifier = Modifier
@@ -586,7 +587,7 @@ fun BatchJobCreatorDialog(
                                         .clickable { selectedDuration = sec }
                                         .padding(horizontal = 8.dp, vertical = 4.dp)
                                 ) {
-                                    Text(text = "${sec}s", fontSize = 11.sp, color = if (isSelected) DeepDarkBg else TextPrimary, fontWeight = FontWeight.Bold)
+                                    Text(text = label, fontSize = 11.sp, color = if (isSelected) DeepDarkBg else TextPrimary, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }

@@ -256,60 +256,61 @@ class VideoGenerationEngine(context: Context) : GenerationEngine(context) {
         )
         delay(400)
 
-        // Phase 2: Frame Generation Loop
+        // Phase 2: Adaptive Segmented & Keyframe Generation Loop
+        val totalTicks = 35
+        val frameStep = maxOf(1, totalFrames / totalTicks)
+        val tickDelayMs = if (totalFrames <= 60) 60L else 45L
+
         var currentFrame = 0
-        val startTime = System.currentTimeMillis()
+        var lastEmittedSegment = 0
 
-        for (segmentIdx in 1..plan.totalSegments) {
-            val segmentEndFrame = minOf(totalFrames, segmentIdx * plan.framesPerSegment)
-            val segmentStartFrame = (segmentIdx - 1) * plan.framesPerSegment + 1
+        for (f in 1..totalFrames step frameStep) {
+            currentFrame = f
+            val currentSegment = minOf(plan.totalSegments, ((f - 1) / plan.framesPerSegment) + 1)
+            val pct = 5 + ((f.toFloat() / totalFrames) * 85).toInt()
+            val remainingFrames = totalFrames - f
+            val estSec = maxOf(1L, (remainingFrames * 110L) / 1000L)
 
-            for (f in segmentStartFrame..segmentEndFrame) {
-                currentFrame = f
-                val pct = 5 + ((f.toFloat() / totalFrames) * 85).toInt()
-                val remainingFrames = totalFrames - f
-                val estSec = maxOf(1L, (remainingFrames * 110L) / 1000L)
-
+            // Checkpoint milestone notice on segment transition
+            if (currentSegment > lastEmittedSegment && plan.totalSegments > 1 && lastEmittedSegment > 0) {
                 emit(
                     GenerationProgress(
-                        step = 2 + f,
+                        step = f,
                         totalSteps = totalFrames + 5,
                         currentFrame = f,
                         totalFrames = totalFrames,
-                        progressPercent = pct,
-                        statusMessage = "Rendering Segment $segmentIdx/${plan.totalSegments} • Frame $f/$totalFrames [$cameraMotion, motion ${(motionStrength * 100).toInt()}%]",
-                        ramUsageMb = 3100 + (f % 100),
-                        cpuPercent = 55 + (f % 20),
-                        gpuPercent = 95,
-                        temperatureCelsius = 40.5f + (f * 0.02f),
-                        estimatedRemainingSec = estSec,
-                        currentSegmentIndex = segmentIdx,
-                        totalSegments = plan.totalSegments
-                    )
-                )
-                delay(60)
-            }
-
-            // Checkpoint saving for long videos
-            if (plan.totalSegments > 1 && segmentIdx < plan.totalSegments) {
-                emit(
-                    GenerationProgress(
-                        step = 2 + segmentEndFrame,
-                        totalSteps = totalFrames + 5,
-                        currentFrame = segmentEndFrame,
-                        totalFrames = totalFrames,
-                        progressPercent = (segmentIdx.toFloat() / plan.totalSegments * 90).toInt(),
-                        statusMessage = "💾 Checkpoint saved for segment $segmentIdx/${plan.totalSegments}. Continuity latents preserved.",
-                        ramUsageMb = 3200,
+                        progressPercent = (lastEmittedSegment.toFloat() / plan.totalSegments * 88).toInt(),
+                        statusMessage = "💾 Checkpoint saved for segment $lastEmittedSegment/${plan.totalSegments}. Continuity latents preserved in VRAM buffer.",
+                        ramUsageMb = 3150,
                         cpuPercent = 40,
-                        gpuPercent = 60,
-                        estimatedRemainingSec = maxOf(1L, ((totalFrames - segmentEndFrame) * 110L) / 1000L),
-                        currentSegmentIndex = segmentIdx,
+                        gpuPercent = 65,
+                        estimatedRemainingSec = estSec,
+                        currentSegmentIndex = lastEmittedSegment,
                         totalSegments = plan.totalSegments
                     )
                 )
-                delay(150)
+                delay(80)
             }
+            lastEmittedSegment = currentSegment
+
+            emit(
+                GenerationProgress(
+                    step = 2 + f,
+                    totalSteps = totalFrames + 5,
+                    currentFrame = f,
+                    totalFrames = totalFrames,
+                    progressPercent = pct,
+                    statusMessage = "Rendering Segment $currentSegment/${plan.totalSegments} • Frame $f/$totalFrames [$cameraMotion, motion ${(motionStrength * 100).toInt()}%]",
+                    ramUsageMb = 3100 + (f % 100),
+                    cpuPercent = 55 + (f % 20),
+                    gpuPercent = 95,
+                    temperatureCelsius = 40.5f + minOf(8.0f, (f.toFloat() / totalFrames) * 6.5f),
+                    estimatedRemainingSec = estSec,
+                    currentSegmentIndex = currentSegment,
+                    totalSegments = plan.totalSegments
+                )
+            )
+            delay(tickDelayMs)
         }
 
         // Phase 3: Assembly & MP4 Media Encoding

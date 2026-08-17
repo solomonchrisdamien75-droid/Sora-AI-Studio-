@@ -53,6 +53,7 @@ class SoraRepository(
     val modelValidator = ModelValidationEngine(context)
     val modelStorageScanner = ModelStorageScanner(context, modelValidator, aiModelDao)
     val modelQuantizationEngine = ModelQuantizationEngine(context, aiModelDao, quantizationHistoryDao)
+    val modelFusionEngine = com.example.ai.fusion.ModelFusionEngine(context, aiModelDao)
     val offlineAssistantEngine = OfflineAssistantEngine(context, aiModelDao)
     val videoEditorEngine = VideoEditorEngine()
     val realMediaSynthesisEngine = com.example.ai.generator.RealMediaSynthesisEngine(context)

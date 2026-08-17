@@ -33,6 +33,107 @@ import com.example.ui.components.*
 import com.example.ui.theme.*
 import kotlinx.coroutines.launch
 
+@Composable
+fun MetricBadge(label: String, value: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    Surface(
+        color = GlassSurfaceVariant,
+        shape = RoundedCornerShape(6.dp),
+        border = BorderStroke(1.dp, CardBorder)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(11.dp), tint = NeonCyan)
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("$label: $value", fontSize = 10.sp, color = TextPrimary)
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// 1. DASHBOARD & PIPELINE WORKFLOW VIEW
+// -------------------------------------------------------------
+@Composable
+fun ManhwaDashboardView(
+    project: ManhwaProject,
+    onNavigateFeature: (String) -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            StudioFeatureSectionHeader(
+                title = "Manhwa Animation & Recap Pipeline",
+                subtitle = "Complete automated 12-stage production suite from raw manhwa webtoon images to fully voiced cinematic recap",
+                badgeText = "DASHBOARD",
+                icon = Icons.Default.Dashboard,
+                accentColor = ElectricPink
+            )
+        }
+
+        item {
+            StudioDetailsCard(
+                title = "Project Status & Telemetry",
+                details = listOf(
+                    "Project Name" to project.title,
+                    "Total Panels Imported" to "${project.panels.size} Panels",
+                    "Synthesized Scenes" to "${project.scenes.size} Scenes",
+                    "Audio Track Duration" to if (project.audioTrack != null) "${project.audioTrack.durationMs / 1000}s" else "No Audio",
+                    "Engine Status" to project.status.name,
+                    "Target Framerate & Res" to "${project.fps} FPS (${project.resolution})"
+                ),
+                accentColor = ElectricPink
+            )
+        }
+
+        item {
+            SoraGlassCard(borderColor = ElectricPink) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Production Workflow Stages", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = ElectricPink)
+                    listOf(
+                        Triple("IMPORT_ASSETS", "1. Import Webtoon & Audio", Icons.Default.CloudUpload),
+                        Triple("PANEL_DETECTION", "2. Smart Panel & Bubble Detection", Icons.Default.Crop),
+                        Triple("OCR_CLEANING", "3. OCR Text Extraction & Inpainting", Icons.Default.TextFields),
+                        Triple("AUDIO_ANALYSIS", "4. Audio VAD & Character Isolation", Icons.Default.GraphicEq),
+                        Triple("TIMELINE_SYNC", "5. Dialogue-to-Panel Alignment", Icons.Default.SyncAlt),
+                        Triple("ANIMATION_STUDIO", "6. 2.5D Motion & Parallax Effects", Icons.Default.Animation),
+                        Triple("LIP_SYNC_FX", "7. Neural Mouth Sync & SFX Layering", Icons.Default.RecordVoiceOver),
+                        Triple("SCENE_DIRECTOR", "8. Scene Transition & Storyboard", Icons.Default.Movie),
+                        Triple("RECAP_ENGINE", "9. AI Recap Script Generator", Icons.Default.AutoAwesome),
+                        Triple("STORY_CONTINUATION", "10. Infinite Chapter Continuation", Icons.Default.FastForward),
+                        Triple("QUALITY_CHECK", "11. Quality Assurance & Continuity QC", Icons.Default.CheckCircle),
+                        Triple("EXPORT_RENDER", "12. 4K Video Encoding & Subtitles", Icons.Default.Download)
+                    ).forEach { (id, title, icon) ->
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onNavigateFeature(id) },
+                            color = GlassSurfaceVariant,
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, CardBorder)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(icon, contentDescription = null, tint = ElectricPink, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(title, fontSize = 12.sp, color = TextPrimary, fontWeight = FontWeight.SemiBold)
+                                }
+                                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 // -------------------------------------------------------------
 // 2. IMPORT MANHWA & AUDIO VIEW
 // -------------------------------------------------------------

@@ -219,6 +219,25 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
     private val _quantizationState = MutableStateFlow<QuantizationProgressState?>(null)
     val quantizationState: StateFlow<QuantizationProgressState?> = _quantizationState.asStateFlow()
 
+    // Dedicated Model Fusion Studio State
+    private val _fusionProgressState = MutableStateFlow<com.example.ai.fusion.FusionProgressState?>(null)
+    val fusionProgressState: StateFlow<com.example.ai.fusion.FusionProgressState?> = _fusionProgressState.asStateFlow()
+
+    private val _selectedFusionModelIds = MutableStateFlow<Set<String>>(emptySet())
+    val selectedFusionModelIds: StateFlow<Set<String>> = _selectedFusionModelIds.asStateFlow()
+
+    private val _fusionWeights = MutableStateFlow<Map<String, Float>>(emptyMap())
+    val fusionWeights: StateFlow<Map<String, Float>> = _fusionWeights.asStateFlow()
+
+    private val _selectedFusionMethod = MutableStateFlow("SLERP_WEIGHT_MERGE")
+    val selectedFusionMethod: StateFlow<String> = _selectedFusionMethod.asStateFlow()
+
+    private val _fusedModelTargetName = MutableStateFlow("Sora-Unified-Omni-Q4")
+    val fusedModelTargetName: StateFlow<String> = _fusedModelTargetName.asStateFlow()
+
+    private val _fusionTargetPrecision = MutableStateFlow("AUTO")
+    val fusionTargetPrecision: StateFlow<String> = _fusionTargetPrecision.asStateFlow()
+
     private val _assistantInput = MutableStateFlow("Sci-Fi action scene with spaceship chase through neon asteroids")
     val assistantInput: StateFlow<String> = _assistantInput.asStateFlow()
 
@@ -1671,6 +1690,71 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
 
     fun clearQuantizationState() {
         _quantizationState.value = null
+    }
+
+    // Model Fusion Actions
+    fun toggleSelectModelForFusion(modelId: String) {
+        val current = _selectedFusionModelIds.value.toMutableSet()
+        if (current.contains(modelId)) {
+            current.remove(modelId)
+        } else {
+            current.add(modelId)
+        }
+        _selectedFusionModelIds.value = current
+    }
+
+    fun setFusionModelWeight(modelId: String, weight: Float) {
+        val current = _fusionWeights.value.toMutableMap()
+        current[modelId] = weight.coerceIn(0.01f, 1.0f)
+        _fusionWeights.value = current
+    }
+
+    fun setSelectedFusionMethod(method: String) {
+        _selectedFusionMethod.value = method
+    }
+
+    fun setFusedModelTargetName(name: String) {
+        _fusedModelTargetName.value = name
+    }
+
+    fun setFusionTargetPrecision(precision: String) {
+        _fusionTargetPrecision.value = precision
+    }
+
+    fun clearSelectedFusionModels() {
+        _selectedFusionModelIds.value = emptySet()
+        _fusionWeights.value = emptyMap()
+    }
+
+    fun startModelFusion(
+        models: List<AiModelEntity>,
+        targetName: String,
+        method: String,
+        weights: Map<String, Float> = emptyMap(),
+        targetPrecision: String = "AUTO"
+    ) {
+        if (models.size < 2) {
+            _settingsStatusMessage.value = "Please select at least 2 models to fuse."
+            return
+        }
+        viewModelScope.launch {
+            repository.modelFusionEngine.startModelFusion(
+                models = models,
+                targetName = targetName,
+                method = method,
+                weights = weights,
+                targetPrecision = targetPrecision
+            ).collect { state ->
+                _fusionProgressState.value = state
+                if (state.isFinished) {
+                    _settingsStatusMessage.value = "Successfully fused ${models.size} models into '${state.fusedModelName}'!"
+                }
+            }
+        }
+    }
+
+    fun clearFusionProgress() {
+        _fusionProgressState.value = null
     }
 
     fun updateAssistantInput(input: String) {
