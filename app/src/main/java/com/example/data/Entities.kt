@@ -191,4 +191,26 @@ data class GenerationLogEntity(
     val logDetails: String = ""
 )
 
+@Entity(tableName = "local_model_metadata")
+data class LocalModelMetadataEntity(
+    @PrimaryKey val modelId: String,
+    val modelName: String,
+    val version: String, // Model versioning (e.g. "v1.0.2")
+    val architecture: String, // e.g. "Transformer", "Diffusion", "GGUF-Llama"
+    val quantization: String, // e.g. "Q4_K_M", "FP16", "INT8"
+    val localPath: String, // Absolute or relative file path on device storage
+    val fileUri: String? = null, // Content URI if stored via SAF or external storage
+    val storageLocation: String = "INTERNAL", // INTERNAL, SD_CARD, CUSTOM, SAF_URI
+    val fileSizeBytes: Long,
+    val isDownloaded: Boolean = true,
+    val downloadState: String = "AVAILABLE", // AVAILABLE, MISSING, CORRUPTED, OUTDATED, DOWNLOADING
+    val compatibilityStatus: String = "COMPATIBLE", // COMPATIBLE, INCOMPATIBLE_RAM, INCOMPATIBLE_ARCH, UNVERIFIED
+    val validationStatus: String = "VALID", // VALID, INVALID, MISSING_FILE, ZERO_BYTE, UNVERIFIED
+    val ramRequiredMb: Int,
+    val checksum: String? = null,
+    val lastVerifiedTimestamp: Long = System.currentTimeMillis(),
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+
 

@@ -195,4 +195,47 @@ interface GenerationLogDao {
     suspend fun clearAllLogs()
 }
 
+@Dao
+interface LocalModelMetadataDao {
+    @Query("SELECT * FROM local_model_metadata ORDER BY modelName ASC")
+    fun getAllLocalModels(): Flow<List<LocalModelMetadataEntity>>
+
+    @Query("SELECT * FROM local_model_metadata WHERE compatibilityStatus = :status ORDER BY modelName ASC")
+    fun getModelsByCompatibilityStatus(status: String): Flow<List<LocalModelMetadataEntity>>
+
+    @Query("SELECT * FROM local_model_metadata WHERE modelId = :modelId LIMIT 1")
+    suspend fun getModelMetadataById(modelId: String): LocalModelMetadataEntity?
+
+    @Query("SELECT * FROM local_model_metadata WHERE localPath = :path LIMIT 1")
+    suspend fun getModelByPath(path: String): LocalModelMetadataEntity?
+
+    @Query("SELECT * FROM local_model_metadata WHERE version = :version")
+    fun getModelsByVersion(version: String): Flow<List<LocalModelMetadataEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertModelMetadata(metadata: LocalModelMetadataEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertModelMetadataList(metadataList: List<LocalModelMetadataEntity>)
+
+    @Update
+    suspend fun updateModelMetadata(metadata: LocalModelMetadataEntity)
+
+    @Query("UPDATE local_model_metadata SET compatibilityStatus = :status, validationStatus = :validationStatus, lastVerifiedTimestamp = :timestamp WHERE modelId = :modelId")
+    suspend fun updateCompatibilityStatus(modelId: String, status: String, validationStatus: String, timestamp: Long)
+
+    @Query("UPDATE local_model_metadata SET localPath = :path, fileSizeBytes = :fileSizeBytes, downloadState = :downloadState, lastVerifiedTimestamp = :timestamp WHERE modelId = :modelId")
+    suspend fun updateModelFilePathAndState(modelId: String, path: String, fileSizeBytes: Long, downloadState: String, timestamp: Long)
+
+    @Delete
+    suspend fun deleteModelMetadata(metadata: LocalModelMetadataEntity)
+
+    @Query("DELETE FROM local_model_metadata WHERE modelId = :modelId")
+    suspend fun deleteModelMetadataById(modelId: String)
+
+    @Query("DELETE FROM local_model_metadata")
+    suspend fun clearAll()
+}
+
+
 

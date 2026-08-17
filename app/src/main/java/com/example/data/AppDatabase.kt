@@ -15,9 +15,10 @@ import androidx.room.RoomDatabase
         QuantizationHistoryEntity::class,
         StoryProjectEntity::class,
         ScriptProjectEntity::class,
-        GenerationLogEntity::class
+        GenerationLogEntity::class,
+        LocalModelMetadataEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -30,6 +31,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun storyProjectDao(): StoryProjectDao
     abstract fun scriptProjectDao(): ScriptProjectDao
     abstract fun generationLogDao(): GenerationLogDao
+    abstract fun localModelMetadataDao(): LocalModelMetadataDao
 
 
 
