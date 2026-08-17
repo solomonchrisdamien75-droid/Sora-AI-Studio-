@@ -82,6 +82,12 @@ com.example/
 │   ├── MediaItemDao.kt                  // DAO for Video, Image, Audio, Script & Story Assets
 │   └── SoraRepository.kt                // Unified Reactive Single-Source-of-Truth Data Layer
 ├── editor/                              // Multi-Track Timeline Engine, Keyframe Interpolator & VFX
+├── network/
+│   └── huggingface/
+│       ├── HuggingFaceApiService.kt     // Retrofit REST API Interface (Hub search, repo metadata & @Streaming downloads)
+│       ├── HuggingFaceDataModels.kt     // Moshi JSON Models (HfModelItem, HfModelDetail, HfSibling, HfLfsInfo)
+│       ├── HuggingFaceNetworkUtility.kt // Production Retrofit Stream Downloader (Chunk streaming, Range headers, SHA-256)
+│       └── HuggingFaceRetrofitClient.kt // OkHttpClient & Retrofit Builder with Token Auth & Logging Interceptors
 ├── manhwa/
 │   ├── data/                            // Manhwa Project Manifests, Page Slices & OCR Cache
 │   ├── engine/                          // 2.5D Multi-Plane Parallax Camera & Particle FX Choreographer

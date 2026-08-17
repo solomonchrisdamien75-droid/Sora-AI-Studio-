@@ -213,6 +213,15 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
     private val _huggingFaceResults = MutableStateFlow<List<HuggingFaceModelInfo>>(emptyList())
     val huggingFaceResults: StateFlow<List<HuggingFaceModelInfo>> = _huggingFaceResults.asStateFlow()
 
+    private val _selectedHfModelDetail = MutableStateFlow<com.example.network.huggingface.HfModelDetail?>(null)
+    val selectedHfModelDetail: StateFlow<com.example.network.huggingface.HfModelDetail?> = _selectedHfModelDetail.asStateFlow()
+
+    private val _selectedHfModelFiles = MutableStateFlow<List<com.example.network.huggingface.HfSibling>>(emptyList())
+    val selectedHfModelFiles: StateFlow<List<com.example.network.huggingface.HfSibling>> = _selectedHfModelFiles.asStateFlow()
+
+    private val _isLoadingHfDetails = MutableStateFlow(false)
+    val isLoadingHfDetails: StateFlow<Boolean> = _isLoadingHfDetails.asStateFlow()
+
     private val _downloadingState = MutableStateFlow<DownloadProgressState?>(null)
     val downloadingState: StateFlow<DownloadProgressState?> = _downloadingState.asStateFlow()
 
@@ -1405,6 +1414,48 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             _huggingFaceResults.value = repository.huggingFaceClient.searchModels(query)
         }
+    }
+
+    fun inspectHuggingFaceModel(repoId: String) {
+        viewModelScope.launch {
+            _isLoadingHfDetails.value = true
+            val detailResult = repository.huggingFaceClient.getModelDetails(repoId)
+            val filesResult = repository.huggingFaceClient.getModelFiles(repoId)
+            _selectedHfModelDetail.value = detailResult.getOrNull()
+            _selectedHfModelFiles.value = filesResult.getOrDefault(detailResult.getOrNull()?.siblings ?: emptyList())
+            _isLoadingHfDetails.value = false
+        }
+    }
+
+    fun dismissHfDetails() {
+        _selectedHfModelDetail.value = null
+        _selectedHfModelFiles.value = emptyList()
+        _isLoadingHfDetails.value = false
+    }
+
+    fun downloadSpecificHfFile(
+        repoId: String,
+        fileName: String,
+        modelName: String,
+        format: String = "BIN",
+        modelType: String = "VIDEO",
+        storageType: String = "INTERNAL",
+        customPath: String? = null
+    ) {
+        val modelInfo = HuggingFaceModelInfo(
+            id = "$repoId/$fileName",
+            name = if (fileName.contains("/")) fileName.substringAfterLast("/") else "$modelName ($fileName)",
+            author = repoId.substringBefore("/", "Community"),
+            downloads = 5000,
+            likes = 300,
+            format = format,
+            modelType = modelType,
+            sizeBytes = 1_500_000_000L,
+            ramRequiredMb = 3200,
+            downloadUrl = "https://huggingface.co/$repoId/resolve/main/$fileName",
+            tags = listOf("huggingface", "bin-weight", format.lowercase())
+        )
+        downloadHuggingFaceModelWithLocation(modelInfo, storageType, customPath)
     }
 
     fun downloadHuggingFaceModel(model: HuggingFaceModelInfo) {

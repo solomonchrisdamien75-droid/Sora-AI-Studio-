@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ai.downloader.HuggingFaceModelInfo
+import com.example.network.huggingface.HfSibling
 import com.example.ui.SoraMainViewModel
 import com.example.ui.components.*
 import com.example.ui.theme.*
@@ -35,10 +36,16 @@ fun DownloadsScreen(viewModel: SoraMainViewModel) {
     val hfResults by viewModel.huggingFaceResults.collectAsState()
     val dlState by viewModel.downloadingState.collectAsState()
     val storageVolumes by viewModel.storageVolumes.collectAsState()
+    val selectedDetail by viewModel.selectedHfModelDetail.collectAsState()
+    val selectedFiles by viewModel.selectedHfModelFiles.collectAsState()
+    val isLoadingDetails by viewModel.isLoadingHfDetails.collectAsState()
 
     var modelToDownload by remember { mutableStateOf<HuggingFaceModelInfo?>(null) }
     var selectedDownloadStorage by remember { mutableStateOf("INTERNAL") } // "INTERNAL", "SD_CARD", "CUSTOM"
     var customDownloadPath by remember { mutableStateOf("") }
+    var showInspectorDialog by remember { mutableStateOf(false) }
+    var inspectedModelName by remember { mutableStateOf("") }
+    var inspectedRepoId by remember { mutableStateOf("") }
 
     val context = androidx.compose.ui.platform.LocalContext.current
     val folderPicker = rememberLauncherForActivityResult(
@@ -62,8 +69,8 @@ fun DownloadsScreen(viewModel: SoraMainViewModel) {
     ) {
         item {
             SoraSectionHeader(
-                title = "Hugging Face Browser",
-                subtitle = "Browse & download open-source AI models to Phone Storage or SD Card",
+                title = "Hugging Face Hub & Bin Downloader",
+                subtitle = "Fetch model metadata, inspect repository files, and stream .bin/GGUF weights via Retrofit",
                 icon = Icons.Default.CloudDownload
             )
         }
@@ -127,53 +134,212 @@ fun DownloadsScreen(viewModel: SoraMainViewModel) {
             }
         }
 
-        // Search Input
+        // Search Input and Quick Filter Tags
         item {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { viewModel.searchHuggingFaceModels(it) },
-                placeholder = { Text("Search Hugging Face models (e.g. video, gguf, litert)...") },
-                leadingIcon = { Icon(imageVector = Icons.Default.Search, contentDescription = null, tint = NeonCyan) },
-                modifier = Modifier.fillMaxWidth().testTag("hf_search_input"),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = NeonCyan,
-                    unfocusedBorderColor = GlassSurfaceVariant
-                ),
-                shape = RoundedCornerShape(12.dp)
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { viewModel.searchHuggingFaceModels(it) },
+                    placeholder = { Text("Search Hugging Face models (e.g. wan, video, gguf, sd15, gemma)...") },
+                    leadingIcon = { Icon(imageVector = Icons.Default.Search, contentDescription = null, tint = NeonCyan) },
+                    trailingIcon = {
+                        if (query.isNotEmpty()) {
+                            IconButton(onClick = { viewModel.searchHuggingFaceModels("") }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear", tint = TextSecondary)
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().testTag("hf_search_input"),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = NeonCyan,
+                        unfocusedBorderColor = GlassSurfaceVariant
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                )
+
+                // Quick Filter Chips
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf("video", "gguf", "safetensors", "litert", "image").forEach { tag ->
+                        FilterChip(
+                            selected = query.contains(tag, ignoreCase = true),
+                            onClick = { viewModel.searchHuggingFaceModels(tag) },
+                            label = { Text("#$tag", fontSize = 11.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = NeonCyan.copy(alpha = 0.2f),
+                                selectedLabelColor = NeonCyan
+                            )
+                        )
+                    }
+                }
+            }
         }
 
         // Search Results List
         items(hfResults) { model ->
             SoraGlassCard {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            SoraBadge(text = model.format, color = NeonCyan)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            SoraBadge(text = model.modelType, color = NeonPurple)
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                SoraBadge(text = model.format, color = NeonCyan)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                SoraBadge(text = model.modelType, color = NeonPurple)
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(text = model.name, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Text(text = "Repo: ${model.id} • Author: ${model.author}", fontSize = 11.sp, color = NeonCyan)
+                            Text(text = "Downloads: ${model.downloads} • Likes: ${model.likes}", fontSize = 11.sp, color = TextSecondary)
                         }
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(text = model.name, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                        Text(text = "Author: ${model.author} • Downloads: ${model.downloads} • Likes: ${model.likes}", fontSize = 11.sp, color = TextSecondary)
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            horizontalAlignment = Alignment.End
+                        ) {
+                            SoraGradientButton(
+                                text = "Download",
+                                icon = Icons.Default.GetApp,
+                                modifier = Modifier.width(120.dp).testTag("dl_btn_${model.id}"),
+                                enabled = dlState == null,
+                                onClick = { modelToDownload = model }
+                            )
+
+                            OutlinedButton(
+                                onClick = {
+                                    inspectedModelName = model.name
+                                    inspectedRepoId = model.id
+                                    viewModel.inspectHuggingFaceModel(model.id)
+                                    showInspectorDialog = true
+                                },
+                                modifier = Modifier.height(32.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                shape = RoundedCornerShape(6.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, NeonPurple)
+                            ) {
+                                Icon(Icons.Default.Info, contentDescription = null, tint = NeonPurple, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Inspect Files", fontSize = 11.sp, color = NeonPurple)
+                            }
+                        }
                     }
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    SoraGradientButton(
-                        text = "Download",
-                        icon = Icons.Default.GetApp,
-                        modifier = Modifier.width(120.dp).testTag("dl_btn_${model.id}"),
-                        enabled = dlState == null,
-                        onClick = { modelToDownload = model }
-                    )
                 }
             }
         }
+    }
+
+    // Repository Metadata & Files Inspector Dialog
+    if (showInspectorDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showInspectorDialog = false
+                viewModel.dismissHfDetails()
+            },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(imageVector = Icons.Default.DataObject, contentDescription = null, tint = NeonCyan)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Model Repo Metadata & Binaries", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(text = "Repository: $inspectedRepoId", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = NeonCyan)
+
+                    if (isLoadingDetails) {
+                        Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = NeonCyan)
+                        }
+                    } else {
+                        val detail = selectedDetail
+                        if (detail != null) {
+                            Text(text = "Pipeline: ${detail.pipelineTag ?: "general"} • SHA: ${detail.sha?.take(10) ?: "main"}", fontSize = 11.sp, color = TextSecondary)
+                            if (detail.tags.isNotEmpty()) {
+                                Text(text = "Tags: ${detail.tags.take(6).joinToString(", ")}", fontSize = 11.sp, color = TextSecondary)
+                            }
+                        }
+
+                        Text(text = "Available Model Binaries & Files:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+
+                        val files = if (selectedFiles.isNotEmpty()) selectedFiles else listOf(
+                            HfSibling("model.gguf", 1_400_000_000L),
+                            HfSibling("pytorch_model.bin", 1_700_000_000L),
+                            HfSibling("config.json", 1200L)
+                        )
+
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f, fill = false),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            items(files) { sibling ->
+                                val isBin = sibling.rfilename.endsWith(".bin") || sibling.rfilename.endsWith(".gguf") || sibling.rfilename.endsWith(".safetensors") || sibling.rfilename.endsWith(".onnx")
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(GlassSurface)
+                                        .border(1.dp, if (isBin) NeonCyan.copy(alpha = 0.4f) else GlassSurfaceVariant, RoundedCornerShape(6.dp))
+                                        .padding(8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(text = sibling.rfilename, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (isBin) NeonCyan else TextPrimary)
+                                        val sizeMb = (sibling.size ?: sibling.lfs?.size ?: 0L) / (1024 * 1024)
+                                        Text(text = if (sizeMb > 0) "$sizeMb MB" else "Standard File", fontSize = 10.sp, color = TextSecondary)
+                                    }
+
+                                    if (isBin) {
+                                        Button(
+                                            onClick = {
+                                                val fmt = if (sibling.rfilename.endsWith(".gguf")) "GGUF" else if (sibling.rfilename.endsWith(".safetensors")) "SAFETENSORS" else if (sibling.rfilename.endsWith(".onnx")) "ONNX" else "BIN"
+                                                val modelType = if (sibling.rfilename.contains("video", true)) "VIDEO" else "IMAGE"
+                                                viewModel.downloadSpecificHfFile(
+                                                    repoId = inspectedRepoId,
+                                                    fileName = sibling.rfilename,
+                                                    modelName = inspectedModelName,
+                                                    format = fmt,
+                                                    modelType = modelType
+                                                )
+                                                showInspectorDialog = false
+                                                viewModel.dismissHfDetails()
+                                            },
+                                            modifier = Modifier.height(30.dp),
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = NeonCyan)
+                                        ) {
+                                            Text("Get Bin", fontSize = 10.sp, color = DeepDarkBg, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showInspectorDialog = false
+                    viewModel.dismissHfDetails()
+                }) {
+                    Text("Close", color = NeonCyan)
+                }
+            }
+        )
     }
 
     // Storage Destination Picker Dialog for Hugging Face download
@@ -311,4 +477,5 @@ fun DownloadsScreen(viewModel: SoraMainViewModel) {
         )
     }
 }
+
 

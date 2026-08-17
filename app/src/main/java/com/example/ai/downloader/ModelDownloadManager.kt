@@ -10,6 +10,8 @@ import com.example.ai.models.ModelValidationEngine
 import com.example.ai.models.ModelValidationStatus
 import com.example.data.AiModelDao
 import com.example.data.AiModelEntity
+import com.example.network.huggingface.HuggingFaceNetworkUtility
+import com.example.network.huggingface.HuggingFaceRetrofitClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -31,12 +33,14 @@ data class DownloadProgressState(
     val isPaused: Boolean = false,
     val storageLocationLabel: String = "Internal Storage",
     val destinationPath: String? = null,
-    val error: String? = null
+    val error: String? = null,
+    val sha256Checksum: String? = null
 )
 
 class ModelDownloadManager(
     private val context: Context,
-    private val aiModelDao: AiModelDao
+    private val aiModelDao: AiModelDao,
+    val networkUtility: HuggingFaceNetworkUtility = HuggingFaceNetworkUtility(HuggingFaceRetrofitClient.apiService)
 ) {
     private val validator = ModelValidationEngine(context)
     private val storageManager = DeviceStorageManager(context)
@@ -130,7 +134,6 @@ class ModelDownloadManager(
 
             if (isDone) {
                 if (localTargetFile != null) {
-                    val tempFile = File(localTargetFile.parentFile, ".tmp_dl_*_$fileName")
                     val matchingTemp = localTargetFile.parentFile?.listFiles { _, name -> name.startsWith(".tmp_dl_") && name.endsWith(fileName) }?.firstOrNull()
                     if (matchingTemp != null) {
                         finalizePhysicalFile(matchingTemp, localTargetFile)
@@ -159,7 +162,7 @@ class ModelDownloadManager(
                         architecture = validation.architecture,
                         backend = validation.backend,
                         quantization = if (model.name.contains("Q4")) "Q4_K_M" else "Standard",
-                        description = "Downloaded to $locationLabel • Author: ${model.author} • Verified format: ${validation.detectedFormat}"
+                        description = "Downloaded via Retrofit to $locationLabel • Author: ${model.author} • Verified format: ${validation.detectedFormat}"
                     )
                     withContext(Dispatchers.IO) {
                         aiModelDao.insertModel(entity)
@@ -184,7 +187,7 @@ class ModelDownloadManager(
                         architecture = validation.architecture,
                         backend = validation.backend,
                         quantization = if (model.name.contains("Q4")) "Q4_K_M" else "Standard",
-                        description = "Downloaded to SAF Directory • Author: ${model.author}"
+                        description = "Downloaded via Retrofit to SAF Directory • Author: ${model.author}"
                     )
                     withContext(Dispatchers.IO) {
                         aiModelDao.insertModel(entity)
