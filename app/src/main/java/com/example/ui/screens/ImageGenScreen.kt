@@ -688,6 +688,7 @@ fun ImageGenScreen(viewModel: SoraMainViewModel) {
             if (latestResult != null && latestResult?.mediaType == "IMAGE") {
                 item {
                     latestResult?.let { item ->
+                        val localFile = java.io.File(item.filePath)
                         SoraGlassCard(borderColor = AccentGreen) {
                             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Row(
@@ -704,6 +705,19 @@ fun ImageGenScreen(viewModel: SoraMainViewModel) {
                                         Icon(Icons.Default.Close, contentDescription = "Close", tint = TextSecondary, modifier = Modifier.size(16.dp))
                                     }
                                 }
+
+                                if (localFile.exists()) {
+                                    coil.compose.AsyncImage(
+                                        model = localFile,
+                                        contentDescription = "Generated Image",
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(260.dp)
+                                            .clip(RoundedCornerShape(8.dp)),
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                    )
+                                }
+
                                 Text(text = item.title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                                 Text(text = "Saved to Gallery • ${item.resolutionLabel} • Style: ${form.style}", fontSize = 11.sp, color = TextSecondary)
 

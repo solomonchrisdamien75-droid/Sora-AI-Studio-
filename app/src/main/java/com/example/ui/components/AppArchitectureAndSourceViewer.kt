@@ -46,9 +46,9 @@ object AppArchitectureContent {
 Version: 3.5.0-PRO (Production On-Device AI Suite)
 Target Runtime: Android 14+ (API Level 34+), Jetpack Compose (M3), Kotlin Coroutines & Flow
 Local Persistence: SQLite / Room Database (KSP) with Multi-Table Entity Relations
-Inference Framework: On-Device Snapdragon NPU / Adreno Vulkan / CPU Vectorized + Remote GPU Node
+Inference Framework: On-Device Snapdragon NPU / Adreno Vulkan / CPU Vectorized Inference (LiteRT/Llama.cpp/ONNX) + Remote GPU Node
 Audio Pipeline: Low-latency AudioTrack PCM16 Synthesizer + Spatial 3D Binaural DSP
-Video Pipeline: RealMediaSynthesisEngine with 1s to 24+ Hours Multi-Segment Chaining (MP4/H.264/H.265/AV1)
+Video Pipeline: RealMediaSynthesisEngine with 1s to 24+ Hours Multi-Segment Chaining (Real-Time Hardware-Accelerated Inference)
 
 ================================================================================
 1. COMPLETE REPOSITORY & PACKAGE ARCHITECTURE

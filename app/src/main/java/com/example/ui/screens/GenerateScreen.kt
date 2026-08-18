@@ -37,6 +37,9 @@ import com.example.ui.components.*
 import com.example.ui.components.generation.DurationFormatters
 import com.example.ui.components.generation.VideoDurationSelector
 import com.example.ui.theme.*
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
+import java.io.File
 
 val VideoStudioFeatureItems = listOf(
     StudioFeatureItem("TEXT_TO_VIDEO", 1, "Text-to-Video Synthesis", "Cinematic neural prompt-to-motion engine", "CORE AI", Icons.Default.Videocam, "Video"),
@@ -444,17 +447,37 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
 
                         Spacer(modifier = Modifier.height(10.dp))
 
+                        val isImage = result.mediaType == "IMAGE" || result.filePath.endsWith(".png", true) || result.filePath.endsWith(".jpg", true) || result.filePath.endsWith(".jpeg", true)
+                        val localFile = File(result.filePath)
+
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(130.dp)
+                                .height(160.dp)
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(GlassSurfaceVariant)
                                 .border(1.dp, AccentGreen.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
-                                .padding(12.dp)
                         ) {
+                            if (isImage && localFile.exists()) {
+                                AsyncImage(
+                                    model = localFile,
+                                    contentDescription = "Generated Artwork",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                                // Transparent overlay gradient to make text legible
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(
+                                            androidx.compose.ui.graphics.Brush.verticalGradient(
+                                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f))
+                                            )
+                                        )
+                                )
+                            }
                             Column(
-                                modifier = Modifier.fillMaxSize(),
+                                modifier = Modifier.fillMaxSize().padding(12.dp),
                                 verticalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Row(
@@ -463,9 +486,9 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
                                 ) {
                                     SoraBadge(text = result.resolutionLabel, color = AccentGreen)
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(20.dp))
+                                        Icon(imageVector = if (isImage) Icons.Default.Image else Icons.Default.PlayArrow, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(20.dp))
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text(text = "READY TO PLAY", fontSize = 11.sp, color = NeonCyan, fontWeight = FontWeight.Bold)
+                                        Text(text = if (isImage) "IMAGE COMPLETED" else "READY TO PLAY", fontSize = 11.sp, color = NeonCyan, fontWeight = FontWeight.Bold)
                                     }
                                 }
                                 Column {

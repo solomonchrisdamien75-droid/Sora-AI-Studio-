@@ -244,7 +244,9 @@ class ModelStorageScanner(
         val dirs = mutableListOf<File>()
 
         // Internal App Files
-        val internalModels = File(context.filesDir, "ai_models")
+        val internalAiModels = File(context.filesDir, "ai_models")
+        dirs.add(internalAiModels)
+        val internalModels = File(context.filesDir, "models")
         dirs.add(internalModels)
 
         // App External Files

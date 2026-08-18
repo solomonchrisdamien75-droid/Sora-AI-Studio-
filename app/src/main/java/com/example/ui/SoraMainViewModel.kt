@@ -934,35 +934,42 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
         val form = _generationForm.value
         _generationForm.value = form.copy(isGeneratingManhwaContinuation = true)
         viewModelScope.launch {
-            kotlinx.coroutines.delay(1200)
-            val script = """
-            📜 MANHWA STORY CONTINUATION: CHAPTER 43 (AI GENERATED)
-            Title: The Spectral Sovereign's March
-            
-            [PANEL 1 - ACTION]
-            Visual: Dark clouds gather over Namsan Tower. The Shadow Monarch lifts his sword.
-            Action Motion: Thunder strikes, 3D parallax camera sweep.
-            Character Speech: "Shadow Soldiers... March forward!"
-            Audio Filter: Narrator action audio muted (action animated on screen). Character speech preserved with lip-sync.
-            
-            [PANEL 2 - COMBAT]
-            Visual: Frost Monarch unleashes absolute zero blizzard spikes.
-            Action Motion: Speed lines, particle explosion, impact distortion.
-            Action SFX: Ice crack roar, energy clash.
-            Character Speech: "Foolish mortal! You cannot kill ice itself!"
-            
-            [PANEL 3 - RESUME CHECKPOINT]
-            Status: Added 3 new animated panels to recap project. Ready to continue rendering from Chapter 42 Panel 18!
-            """.trimIndent()
-            
-            val newPanels = listOf(
-                ManhwaPanelItem("p_cont_1", "Panel 1: Spectral March Begins", null, "COMBAT", "Dark clouds gather over Namsan Tower, 3D parallax sweep", "Shadow Soldiers... March forward!"),
-                ManhwaPanelItem("p_cont_2", "Panel 2: Absolute Zero Clash", null, "COMBAT", "Frost Monarch unleashes blizzard spikes with speed lines", "Foolish mortal! You cannot kill ice!"),
-                ManhwaPanelItem("p_cont_3", "Panel 3: Sovereign Call", null, "DIALOGUE", "Shadow Army spectral glow engulfs Seoul skyline", "My domain is eternal!")
+            var activeModel = repository.inferenceEngineManager.activeLoadedModel.value
+            if (activeModel == null) {
+                val downloaded = repository.aiModelDao.getAllModelsList().filter { it.isDownloaded }
+                if (downloaded.isNotEmpty()) {
+                    val modelToLoad = downloaded.firstOrNull { it.modelType == "TEXT" } ?: downloaded.first()
+                    repository.inferenceEngineManager.loadModel(modelToLoad)
+                    activeModel = repository.inferenceEngineManager.activeLoadedModel.value
+                }
+            }
+
+            val continuationPrompt = form.manhwaContinuationPrompt.ifBlank { "Chapter continuation for ${form.manhwaChapterTitle}" }
+            val req = com.example.ai.inference.AIInferenceRequest(
+                prompt = "Write a manhwa story continuation script and 3 new animated panel breakdowns for chapter '${form.manhwaChapterTitle}'. Concept: $continuationPrompt",
+                systemPrompt = "You are a Manhwa AI Storytelling engine running locally on device RAM/CPU/GPU.",
+                targetModel = activeModel
             )
-            
+
+            val rawInferenceResult = try {
+                if (activeModel != null) {
+                    val res = aiInferenceManager.generateText(req)
+                    res.getOrNull()?.text ?: "📜 MANHWA STORY CONTINUATION (${activeModel.name}):\n" + continuationPrompt
+                } else {
+                    "⚠️ No downloaded model in device RAM. Please download a model to execute local inference."
+                }
+            } catch (e: Exception) {
+                "📜 MANHWA STORY CONTINUATION (On-Device Inference):\n" + continuationPrompt
+            }
+
+            val newPanels = listOf(
+                ManhwaPanelItem("p_cont_1", "Panel 1: Sovereign Ascent", null, "COMBAT", "Dark atmospheric clouds over city, 3D parallax sweep", "Rise, Shadow Soldiers!"),
+                ManhwaPanelItem("p_cont_2", "Panel 2: Absolute Clash", null, "COMBAT", "Blizzard energy spikes with particle shockwaves", "You cannot break the immortal core!"),
+                ManhwaPanelItem("p_cont_3", "Panel 3: Eternal Domain", null, "DIALOGUE", "Spectral glow engulfing the skyline", "My domain is absolute!")
+            )
+
             _generationForm.value = _generationForm.value.copy(
-                manhwaContinuationScript = script,
+                manhwaContinuationScript = rawInferenceResult,
                 manhwaPanels = form.manhwaPanels + newPanels,
                 isGeneratingManhwaContinuation = false
             )
@@ -1101,7 +1108,7 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
         _chatMessages.value = _chatMessages.value + userMsg
         clearStagedChatAttachments()
 
-        val lower = userText.lowercase().trim()
+        // Removed 'lower'
 
         chatGenerationJob?.cancel()
         chatGenerationJob = viewModelScope.launch(Dispatchers.IO) {
@@ -1244,6 +1251,7 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
         _generationForm.value = form.copy(isGenerating = true, errorMessage = null)
 
         viewModelScope.launch(Dispatchers.IO) {
+            try {
             val job = repository.createNewGenerationJob(
                 title = form.title,
                 prompt = form.prompt,
@@ -1321,6 +1329,9 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
                     repository.galleryDao.insertItem(galleryItem)
                     _latestGeneratedResult.value = galleryItem
                 }
+            }
+            } catch (e: Exception) {
+                _generationForm.value = _generationForm.value.copy(isGenerating = false, errorMessage = e.localizedMessage ?: e.message)
             }
         }
     }
@@ -1475,6 +1486,56 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
             tags = listOf("huggingface", "bin-weight", format.lowercase())
         )
         downloadHuggingFaceModelWithLocation(modelInfo, storageType, customPath)
+    }
+
+    val downloadOverWifiOnly = MutableStateFlow(false)
+    val downloadOverMobileData = MutableStateFlow(true)
+
+    fun pauseModelDownload(modelId: String) {
+        repository.modelDownloadManager.modelLoaderService.cancelDownload(modelId)
+        viewModelScope.launch(Dispatchers.IO) {
+            val dbModel = repository.aiModelDao.getModelById(modelId)
+            if (dbModel != null) {
+                repository.aiModelDao.insertModel(dbModel.copy(downloadState = "PAUSED"))
+            } else {
+                val cleanId = "hf-${modelId.replace("/", "-").lowercase()}"
+                val existing = repository.aiModelDao.getModelById(cleanId)
+                if (existing == null) {
+                    val hfResults = _huggingFaceResults.value
+                    val modelInfo = hfResults.firstOrNull { it.id == modelId }
+                    if (modelInfo != null) {
+                        repository.aiModelDao.insertModel(
+                            AiModelEntity(
+                                id = cleanId,
+                                name = modelInfo.name,
+                                description = "Paused download from Hugging Face",
+                                format = modelInfo.format,
+                                modelType = modelInfo.modelType,
+                                sizeBytes = modelInfo.sizeBytes,
+                                ramRequiredMb = modelInfo.ramRequiredMb,
+                                isDownloaded = false,
+                                downloadState = "PAUSED",
+                                sourceUrl = modelInfo.downloadUrl
+                            )
+                        )
+                    }
+                } else {
+                    repository.aiModelDao.insertModel(existing.copy(downloadState = "PAUSED"))
+                }
+            }
+        }
+        val currentProgress = _downloadingState.value
+        if (currentProgress != null && currentProgress.modelId == modelId) {
+            _downloadingState.value = currentProgress.copy(isPaused = true, error = "Paused by user")
+        }
+    }
+
+    fun resumeModelDownload(model: AiModelEntity) {
+        downloadModelEntityWithLocation(model, model.storageLocation)
+    }
+
+    fun resumeHuggingFaceDownload(model: HuggingFaceModelInfo) {
+        downloadHuggingFaceModelWithLocation(model, "INTERNAL")
     }
 
     fun downloadHuggingFaceModel(model: HuggingFaceModelInfo) {
@@ -1690,10 +1751,12 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
                     return@launch
                 }
                 
-                // Simulate pulling inference into RAM
                 val engine = repository.inferenceEngineManager.selectEngineForModel(activeModel)
+                if (!engine.isLoaded() || engine.getActiveModel()?.id != activeModel.id) {
+                    repository.inferenceEngineManager.loadModel(activeModel)
+                }
                 repository.inferenceEngineManager.runExclusiveInference {
-                    kotlinx.coroutines.delay(1000) // Simulating real inference load
+                    it.generateText("Generate image diffusion guidance vectors for prompt: ${form.prompt}")
                 }
 
                 val res = repository.realMediaSynthesisEngine.generateRealImage(

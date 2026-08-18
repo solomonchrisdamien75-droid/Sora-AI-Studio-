@@ -34,15 +34,26 @@ class OfflineAssistantEngine(
 ) {
 
     suspend fun generateScriptAndShots(userConcept: String): ScriptProductionPackage = withContext(Dispatchers.IO) {
-        val downloadedTextModel = aiModelDao.getDownloadedModels().firstOrNull()?.firstOrNull { it.modelType == "TEXT" }
+        var activeModel = inferenceEngineManager.activeLoadedModel.value
+        if (activeModel == null) {
+            val downloaded = aiModelDao.getAllModelsList().filter { it.isDownloaded }
+            if (downloaded.isNotEmpty()) {
+                val modelToLoad = downloaded.firstOrNull { it.modelType == "TEXT" } ?: downloaded.first()
+                inferenceEngineManager.loadModel(modelToLoad)
+                activeModel = inferenceEngineManager.activeLoadedModel.value
+            }
+        }
 
-        val rawText = if (downloadedTextModel != null) {
-            inferenceEngineManager.loadModel(downloadedTextModel)
-            inferenceEngineManager.runExclusiveInference { engine ->
-                engine.generateText("Write a movie script and shot breakdown for: $userConcept")
+        val rawText = if (activeModel != null) {
+            val engine = inferenceEngineManager.selectEngineForModel(activeModel)
+            if (!engine.isLoaded() || engine.getActiveModel()?.id != activeModel.id) {
+                inferenceEngineManager.loadModel(activeModel)
+            }
+            inferenceEngineManager.runExclusiveInference {
+                it.generateText("Write a movie script and shot breakdown for: $userConcept")
             }
         } else {
-            "Error: No downloaded model available for text inference. Please download a TEXT model to generate."
+            "Error: No downloaded model in device RAM. Please download a model first to run local inference."
         }
 
         val title = userConcept.take(24).ifBlank { "Neo Sora Vision" }.uppercase()

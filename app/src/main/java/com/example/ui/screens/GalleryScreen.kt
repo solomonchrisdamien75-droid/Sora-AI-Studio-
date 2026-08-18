@@ -45,6 +45,9 @@ import com.example.ui.components.*
 import com.example.ui.components.generation.DurationFormatters
 import com.example.ui.theme.*
 import kotlinx.coroutines.delay
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -161,27 +164,39 @@ fun GalleryCardItem(
             .clickable { onPlayClick() }
             .testTag("gallery_item_${item.id}")
     ) {
-        // Thumbnail simulated background canvas
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val grad = Brush.verticalGradient(
-                colors = listOf(
-                    Color.hsl(baseHue, 0.45f, 0.15f),
-                    DeepDarkBg.copy(alpha = 0.95f)
-                )
-            )
-            drawRect(brush = grad)
+        val isImage = item.mediaType == "IMAGE" || item.filePath.endsWith(".png", true) || item.filePath.endsWith(".jpg", true) || item.filePath.endsWith(".jpeg", true)
+        val localFile = File(item.filePath)
 
-            // Dynamic grid lines for cyber/filmstrip aesthetic
-            val step = 24.dp.toPx()
-            var x = 0f
-            while (x < size.width) {
-                drawLine(
-                    color = Color.hsl(baseHue, 0.7f, 0.4f, 0.08f),
-                    start = Offset(x, 0f),
-                    end = Offset(x, size.height),
-                    strokeWidth = 1f
+        if (isImage && localFile.exists()) {
+            AsyncImage(
+                model = localFile,
+                contentDescription = "Generated Image Thumbnail",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        } else {
+            // Thumbnail simulated background canvas
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val grad = Brush.verticalGradient(
+                    colors = listOf(
+                        Color.hsl(baseHue, 0.45f, 0.15f),
+                        DeepDarkBg.copy(alpha = 0.95f)
+                    )
                 )
-                x += step
+                drawRect(brush = grad)
+
+                // Dynamic grid lines for cyber/filmstrip aesthetic
+                val step = 24.dp.toPx()
+                var x = 0f
+                while (x < size.width) {
+                    drawLine(
+                        color = Color.hsl(baseHue, 0.7f, 0.4f, 0.08f),
+                        start = Offset(x, 0f),
+                        end = Offset(x, size.height),
+                        strokeWidth = 1f
+                    )
+                    x += step
+                }
             }
         }
 
@@ -424,8 +439,19 @@ fun GalleryVideoPlayerModal(
                         .background(DeepDarkBg)
                         .border(1.dp, NeonCyan.copy(alpha = 0.4f), RoundedCornerShape(14.dp))
                 ) {
-                    // Video Rendering Canvas with dynamic frame visualizer
-                    Canvas(modifier = Modifier.fillMaxSize()) {
+                    val isImage = item.mediaType == "IMAGE" || item.filePath.endsWith(".png", true) || item.filePath.endsWith(".jpg", true) || item.filePath.endsWith(".jpeg", true)
+                    val localFile = File(item.filePath)
+
+                    if (isImage && localFile.exists()) {
+                        AsyncImage(
+                            model = localFile,
+                            contentDescription = "Generated Image Preview",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Fit
+                        )
+                    } else {
+                        // Video Rendering Canvas with dynamic frame visualizer
+                        Canvas(modifier = Modifier.fillMaxSize()) {
                         val playProgress = (currentPlayheadMs.toFloat() / totalDurationMs.toFloat()).coerceIn(0f, 1f)
                         val dynamicHue = (baseHue + playProgress * 60f) % 360f
 
@@ -470,6 +496,7 @@ fun GalleryVideoPlayerModal(
                             size = androidx.compose.ui.geometry.Size(radius * 2, radius * 2),
                             style = Stroke(width = 3.dp.toPx())
                         )
+                    }
                     }
 
                     // Floating Watermark & Status Tag

@@ -40,6 +40,15 @@ fun DownloadsScreen(viewModel: SoraMainViewModel) {
     val selectedFiles by viewModel.selectedHfModelFiles.collectAsState()
     val isLoadingDetails by viewModel.isLoadingHfDetails.collectAsState()
 
+    val allModels by viewModel.allModels.collectAsState()
+    val unfinishedModels = allModels.filter { !it.isDownloaded }
+    val unfinishedModelsCount = unfinishedModels.size
+
+    val wifiOnly by viewModel.downloadOverWifiOnly.collectAsState()
+    val mobileAllowed by viewModel.downloadOverMobileData.collectAsState()
+
+    var activeSubTab by remember { mutableStateOf(0) } // 0 = HF Search, 1 = Unfinished Downloads
+
     var modelToDownload by remember { mutableStateOf<HuggingFaceModelInfo?>(null) }
     var selectedDownloadStorage by remember { mutableStateOf("INTERNAL") } // "INTERNAL", "SD_CARD", "CUSTOM"
     var customDownloadPath by remember { mutableStateOf("") }
@@ -75,7 +84,27 @@ fun DownloadsScreen(viewModel: SoraMainViewModel) {
             )
         }
 
-        // Active Download Progress Monitor Widget
+        item {
+            TabRow(
+                selectedTabIndex = activeSubTab,
+                containerColor = Color.Transparent,
+                contentColor = NeonCyan,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+            ) {
+                Tab(
+                    selected = activeSubTab == 0,
+                    onClick = { activeSubTab = 0 },
+                    text = { Text("🔎 Search HF Hub", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (activeSubTab == 0) NeonCyan else TextSecondary) }
+                )
+                Tab(
+                    selected = activeSubTab == 1,
+                    onClick = { activeSubTab = 1 },
+                    text = { Text("⏳ Unfinished / Paused ($unfinishedModelsCount)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (activeSubTab == 1) NeonCyan else TextSecondary) }
+                )
+            }
+        }
+
+        // Active Download Progress Monitor Widget (Always visible if downloading)
         val state = dlState
         if (state != null) {
             item {
@@ -134,99 +163,198 @@ fun DownloadsScreen(viewModel: SoraMainViewModel) {
             }
         }
 
-        // Search Input and Quick Filter Tags
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { viewModel.searchHuggingFaceModels(it) },
-                    placeholder = { Text("Search Hugging Face models (e.g. wan, video, gguf, sd15, gemma)...") },
-                    leadingIcon = { Icon(imageVector = Icons.Default.Search, contentDescription = null, tint = NeonCyan) },
-                    trailingIcon = {
-                        if (query.isNotEmpty()) {
-                            IconButton(onClick = { viewModel.searchHuggingFaceModels("") }) {
-                                Icon(Icons.Default.Close, contentDescription = "Clear", tint = TextSecondary)
+        if (activeSubTab == 0) {
+            // Search Input and Quick Filter Tags
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { viewModel.searchHuggingFaceModels(it) },
+                        placeholder = { Text("Search Hugging Face models (e.g. wan, video, gguf, sd15, gemma)...") },
+                        leadingIcon = { Icon(imageVector = Icons.Default.Search, contentDescription = null, tint = NeonCyan) },
+                        trailingIcon = {
+                            if (query.isNotEmpty()) {
+                                IconButton(onClick = { viewModel.searchHuggingFaceModels("") }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Clear", tint = TextSecondary)
+                                }
                             }
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth().testTag("hf_search_input"),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = NeonCyan,
-                        unfocusedBorderColor = GlassSurfaceVariant
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                )
+                        },
+                        modifier = Modifier.fillMaxWidth().testTag("hf_search_input"),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = NeonCyan,
+                            unfocusedBorderColor = GlassSurfaceVariant
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    )
 
-                // Quick Filter Chips
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf("video", "gguf", "safetensors", "litert", "image").forEach { tag ->
-                        FilterChip(
-                            selected = query.contains(tag, ignoreCase = true),
-                            onClick = { viewModel.searchHuggingFaceModels(tag) },
-                            label = { Text("#$tag", fontSize = 11.sp) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = NeonCyan.copy(alpha = 0.2f),
-                                selectedLabelColor = NeonCyan
+                    // Quick Filter Chips
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf("video", "gguf", "safetensors", "litert", "image").forEach { tag ->
+                            FilterChip(
+                                selected = query.contains(tag, ignoreCase = true),
+                                onClick = { viewModel.searchHuggingFaceModels(tag) },
+                                label = { Text("#$tag", fontSize = 11.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = NeonCyan.copy(alpha = 0.2f),
+                                    selectedLabelColor = NeonCyan
+                                )
                             )
-                        )
+                        }
                     }
                 }
             }
-        }
 
-        // Search Results List
-        items(hfResults) { model ->
-            SoraGlassCard {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                SoraBadge(text = model.format, color = NeonCyan)
-                                Spacer(modifier = Modifier.width(6.dp))
-                                SoraBadge(text = model.modelType, color = NeonPurple)
+            // Search Results List
+            items(hfResults) { model ->
+                SoraGlassCard {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    SoraBadge(text = model.format, color = NeonCyan)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    SoraBadge(text = model.modelType, color = NeonPurple)
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(text = model.name, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                Text(text = "Repo: ${model.id} • Author: ${model.author}", fontSize = 11.sp, color = NeonCyan)
+                                val formattedSize = if (model.sizeBytes > 0) {
+                                    val sizeMb = model.sizeBytes.toDouble() / (1024.0 * 1024.0)
+                                    if (sizeMb >= 1024.0) String.format("%.2f GB", sizeMb / 1024.0) else String.format("%.1f MB", sizeMb)
+                                } else "Unknown size"
+                                Text(text = "Required Storage: $formattedSize • Downloads: ${model.downloads} • Likes: ${model.likes}", fontSize = 11.sp, color = TextSecondary)
                             }
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(text = model.name, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                            Text(text = "Repo: ${model.id} • Author: ${model.author}", fontSize = 11.sp, color = NeonCyan)
-                            Text(text = "Downloads: ${model.downloads} • Likes: ${model.likes}", fontSize = 11.sp, color = TextSecondary)
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                                horizontalAlignment = Alignment.End
+                            ) {
+                                SoraGradientButton(
+                                    text = "Download",
+                                    icon = Icons.Default.GetApp,
+                                    modifier = Modifier.width(120.dp).testTag("dl_btn_${model.id}"),
+                                    enabled = dlState == null,
+                                    onClick = { modelToDownload = model }
+                                )
+
+                                OutlinedButton(
+                                    onClick = {
+                                        inspectedModelName = model.name
+                                        inspectedRepoId = model.id
+                                        viewModel.inspectHuggingFaceModel(model.id)
+                                        showInspectorDialog = true
+                                    },
+                                    modifier = Modifier.height(32.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                    shape = RoundedCornerShape(6.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, NeonPurple)
+                                ) {
+                                    Icon(Icons.Default.Info, contentDescription = null, tint = NeonPurple, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Inspect Files", fontSize = 11.sp, color = NeonPurple)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // Unfinished Downloads Sub-Tab View
+            item {
+                SoraGlassCard(borderColor = NeonPurple) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Background Network Constraints", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = NeonPurple)
+                        Text("Configure whether downloads can continue in the background using Wi-Fi or Mobile Data.", fontSize = 11.sp, color = TextSecondary)
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Download over Wi-Fi Only", fontSize = 12.sp, color = TextPrimary)
+                            Switch(
+                                checked = wifiOnly,
+                                onCheckedChange = { viewModel.downloadOverWifiOnly.value = it }
+                            )
                         }
 
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                            horizontalAlignment = Alignment.End
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            SoraGradientButton(
-                                text = "Download",
-                                icon = Icons.Default.GetApp,
-                                modifier = Modifier.width(120.dp).testTag("dl_btn_${model.id}"),
-                                enabled = dlState == null,
-                                onClick = { modelToDownload = model }
+                            Text("Allow Background Downloads on Mobile Data", fontSize = 12.sp, color = TextPrimary)
+                            Switch(
+                                checked = mobileAllowed,
+                                onCheckedChange = { viewModel.downloadOverMobileData.value = it }
                             )
+                        }
+                    }
+                }
+            }
 
-                            OutlinedButton(
-                                onClick = {
-                                    inspectedModelName = model.name
-                                    inspectedRepoId = model.id
-                                    viewModel.inspectHuggingFaceModel(model.id)
-                                    showInspectorDialog = true
-                                },
-                                modifier = Modifier.height(32.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                shape = RoundedCornerShape(6.dp),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, NeonPurple)
+            if (unfinishedModels.isEmpty()) {
+                item {
+                    SoraGlassCard {
+                        Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Default.CloudDone, contentDescription = null, tint = AccentGreen, modifier = Modifier.size(36.dp))
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("No Unfinished Downloads", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                Text("All started downloads have finished successfully.", fontSize = 11.sp, color = TextSecondary)
+                            }
+                        }
+                    }
+                }
+            } else {
+                items(unfinishedModels) { model ->
+                    SoraGlassCard(borderColor = if (dlState?.modelId == model.id) NeonCyan else GlassSurfaceVariant) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.Info, contentDescription = null, tint = NeonPurple, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Inspect Files", fontSize = 11.sp, color = NeonPurple)
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        SoraBadge(text = model.format, color = NeonCyan)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        SoraBadge(text = model.modelType, color = NeonPurple)
+                                    }
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(text = model.name, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                    val sizeMb = model.sizeBytes.toDouble() / (1024.0 * 1024.0)
+                                    val sizeStr = if (sizeMb >= 1024.0) String.format("%.2f GB", sizeMb / 1024.0) else String.format("%.1f MB", sizeMb)
+                                    Text(text = "Total Size: $sizeStr • State: ${model.downloadState}", fontSize = 11.sp, color = TextSecondary)
+                                }
+
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    val isCurrent = dlState != null && (dlState?.modelId == model.id || dlState?.modelName == model.name)
+                                    if (isCurrent) {
+                                        IconButton(onClick = { viewModel.pauseModelDownload(model.id) }) {
+                                            Icon(Icons.Default.Pause, contentDescription = "Pause", tint = AccentRed)
+                                        }
+                                    } else {
+                                        IconButton(onClick = { viewModel.resumeModelDownload(model) }) {
+                                            Icon(Icons.Default.PlayArrow, contentDescription = "Resume", tint = AccentGreen)
+                                        }
+                                    }
+                                    IconButton(onClick = { viewModel.deleteOrUnloadModel(model.id) }) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = TextSecondary)
+                                    }
+                                }
                             }
                         }
                     }
@@ -308,13 +436,20 @@ fun DownloadsScreen(viewModel: SoraMainViewModel) {
                                             onClick = {
                                                 val fmt = if (sibling.rfilename.endsWith(".gguf")) "GGUF" else if (sibling.rfilename.endsWith(".safetensors")) "SAFETENSORS" else if (sibling.rfilename.endsWith(".onnx")) "ONNX" else "BIN"
                                                 val modelType = if (sibling.rfilename.contains("video", true)) "VIDEO" else "IMAGE"
-                                                viewModel.downloadSpecificHfFile(
-                                                    repoId = inspectedRepoId,
-                                                    fileName = sibling.rfilename,
-                                                    modelName = inspectedModelName,
+                                                val modelInfo = HuggingFaceModelInfo(
+                                                    id = "$inspectedRepoId/${sibling.rfilename}",
+                                                    name = if (sibling.rfilename.contains("/")) sibling.rfilename.substringAfterLast("/") else "$inspectedModelName (${sibling.rfilename})",
+                                                    author = inspectedRepoId.substringBefore("/", "Community"),
+                                                    downloads = 5000,
+                                                    likes = 300,
                                                     format = fmt,
-                                                    modelType = modelType
+                                                    modelType = modelType,
+                                                    sizeBytes = sibling.size ?: sibling.lfs?.size ?: 1_500_000_000L,
+                                                    ramRequiredMb = 3200,
+                                                    downloadUrl = "https://huggingface.co/$inspectedRepoId/resolve/main/${sibling.rfilename}",
+                                                    tags = listOf("huggingface", "bin-weight", fmt.lowercase())
                                                 )
+                                                modelToDownload = modelInfo
                                                 showInspectorDialog = false
                                                 viewModel.dismissHfDetails()
                                             },
@@ -345,6 +480,11 @@ fun DownloadsScreen(viewModel: SoraMainViewModel) {
     // Storage Destination Picker Dialog for Hugging Face download
     val targetModel = modelToDownload
     if (targetModel != null) {
+        val selectedVolume = storageVolumes.find { it.storageType == selectedDownloadStorage }
+        val isSpaceSufficient = if (selectedVolume != null) {
+            selectedVolume.freeBytes >= targetModel.sizeBytes
+        } else true
+
         AlertDialog(
             onDismissRequest = { modelToDownload = null },
             title = {
@@ -364,6 +504,42 @@ fun DownloadsScreen(viewModel: SoraMainViewModel) {
                         fontSize = 13.sp,
                         color = TextPrimary
                     )
+
+                    val reqSizeStr = if (targetModel.sizeBytes.toDouble() / (1024.0 * 1024.0) >= 1024.0) {
+                        String.format("%.2f GB", targetModel.sizeBytes.toDouble() / (1024.0 * 1024.0 * 1024.0))
+                    } else {
+                        String.format("%.1f MB", targetModel.sizeBytes.toDouble() / (1024.0 * 1024.0))
+                    }
+
+                    Text(
+                        text = "Required Space: $reqSizeStr",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = NeonCyan
+                    )
+
+                    if (!isSpaceSufficient) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = AccentRed.copy(alpha = 0.2f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, AccentRed),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Error, contentDescription = null, tint = AccentRed, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "INSUFFICIENT SPACE! Model requires $reqSizeStr, but selected drive only has ${selectedVolume?.freeGbFormatted ?: "0 GB"} free.",
+                                    fontSize = 11.sp,
+                                    color = AccentRed,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
 
                     // Dynamically display real Android device storage volumes
                     storageVolumes.forEach { volume ->
@@ -464,6 +640,7 @@ fun DownloadsScreen(viewModel: SoraMainViewModel) {
                         viewModel.downloadHuggingFaceModelWithLocation(targetModel, selectedDownloadStorage, path)
                         modelToDownload = null
                     },
+                    enabled = isSpaceSufficient,
                     colors = ButtonDefaults.buttonColors(containerColor = NeonCyan)
                 ) {
                     Text("Start Download", color = DeepDarkBg, fontWeight = FontWeight.Bold)

@@ -1140,6 +1140,20 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
                                 Text(text = model.name, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                                 Text(text = model.description, fontSize = 11.sp, color = TextSecondary)
 
+                                if (!model.isDownloaded) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    val formattedSize = if (model.sizeBytes > 0) {
+                                        val sizeMb = model.sizeBytes.toDouble() / (1024.0 * 1024.0)
+                                        if (sizeMb >= 1024.0) String.format("%.2f GB", sizeMb / 1024.0) else String.format("%.1f MB", sizeMb)
+                                    } else "Unknown size"
+                                    Text(
+                                        text = "📥 Required Storage: $formattedSize",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = NeonCyan
+                                    )
+                                }
+
                                 if (model.isDownloaded && model.localPath != null) {
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
@@ -1679,6 +1693,11 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
     // Choose Download Destination Dialog
     val targetModel = modelToDownload
     if (targetModel != null) {
+        val selectedVolume = storageVolumes.find { it.storageType == selectedDownloadStorage }
+        val isSpaceSufficient = if (selectedVolume != null) {
+            selectedVolume.freeBytes >= targetModel.sizeBytes
+        } else true
+
         AlertDialog(
             onDismissRequest = { modelToDownload = null },
             title = {
@@ -1694,6 +1713,42 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(text = "Save \"${targetModel.name}\" to:", fontSize = 13.sp, color = TextPrimary)
+
+                    val reqSizeStr = if (targetModel.sizeBytes.toDouble() / (1024.0 * 1024.0) >= 1024.0) {
+                        String.format("%.2f GB", targetModel.sizeBytes.toDouble() / (1024.0 * 1024.0 * 1024.0))
+                    } else {
+                        String.format("%.1f MB", targetModel.sizeBytes.toDouble() / (1024.0 * 1024.0))
+                    }
+
+                    Text(
+                        text = "Required Space: $reqSizeStr",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = NeonCyan
+                    )
+
+                    if (!isSpaceSufficient) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = AccentRed.copy(alpha = 0.2f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, AccentRed),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Error, contentDescription = null, tint = AccentRed, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "INSUFFICIENT SPACE! Model requires $reqSizeStr, but selected drive only has ${selectedVolume?.freeGbFormatted ?: "0 GB"} free.",
+                                    fontSize = 11.sp,
+                                    color = AccentRed,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
 
                     storageVolumes.forEach { volume ->
                         val isSelected = selectedDownloadStorage == volume.storageType
@@ -1793,6 +1848,7 @@ fun ModelsScreen(viewModel: SoraMainViewModel) {
                         viewModel.downloadModelEntityWithLocation(targetModel, selectedDownloadStorage, path)
                         modelToDownload = null
                     },
+                    enabled = isSpaceSufficient,
                     colors = ButtonDefaults.buttonColors(containerColor = NeonCyan)
                 ) {
                     Text("Start Download", color = DeepDarkBg, fontWeight = FontWeight.Bold)

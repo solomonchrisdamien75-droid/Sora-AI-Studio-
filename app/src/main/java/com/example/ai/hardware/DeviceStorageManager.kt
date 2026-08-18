@@ -363,5 +363,60 @@ class DeviceStorageManager(private val context: Context) {
         val gb = bytes / (1024.0 * 1024.0 * 1024.0)
         return String.format("%.1f GB", gb)
     }
+
+    fun formatBytesToSize(bytes: Long): String {
+        if (bytes <= 0L) return "0 MB"
+        val gb = bytes / (1024.0 * 1024.0 * 1024.0)
+        return if (gb >= 1.0) {
+            String.format("%.2f GB", gb)
+        } else {
+            val mb = bytes / (1024.0 * 1024.0)
+            String.format("%.1f MB", mb)
+        }
+    }
+
+    fun checkStorageSpace(
+        storageType: String,
+        requiredSizeBytes: Long,
+        customUriOrPath: String? = null
+    ): StorageSpaceCheckResult {
+        val freeBytes = when {
+            storageType.equals("SD_CARD", ignoreCase = true) -> {
+                getSdCardStorageVolume()?.freeBytes ?: getInternalStorageVolume().freeBytes
+            }
+            storageType.equals("CUSTOM", ignoreCase = true) || storageType.equals("CUSTOM_SAF", ignoreCase = true) -> {
+                getInternalStorageVolume().freeBytes
+            }
+            else -> {
+                getInternalStorageVolume().freeBytes
+            }
+        }
+
+        val reqFormatted = formatBytesToSize(requiredSizeBytes)
+        val freeFormatted = formatBytesToSize(freeBytes)
+
+        val hasEnough = freeBytes >= requiredSizeBytes
+        val errorMsg = if (!hasEnough) {
+            "Insufficient storage space! Required $reqFormatted, but only $freeFormatted free on selected drive."
+        } else null
+
+        return StorageSpaceCheckResult(
+            hasEnoughSpace = hasEnough,
+            requiredBytes = requiredSizeBytes,
+            freeBytes = freeBytes,
+            requiredFormatted = reqFormatted,
+            freeFormatted = freeFormatted,
+            errorMessage = errorMsg
+        )
+    }
 }
+
+data class StorageSpaceCheckResult(
+    val hasEnoughSpace: Boolean,
+    val requiredBytes: Long,
+    val freeBytes: Long,
+    val requiredFormatted: String,
+    val freeFormatted: String,
+    val errorMessage: String? = null
+)
 
