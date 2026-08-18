@@ -72,6 +72,11 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
     val hardwareProfile by viewModel.hardwareProfile.collectAsState()
     val telemetry by viewModel.realtimeTelemetry.collectAsState()
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(Unit) {
+        com.example.ui.AdManager.loadInterstitial(context)
+    }
+
     var showMenuModal by remember { mutableStateOf(false) }
 
     val currentFeature = VideoStudioFeatureItems.firstOrNull { it.id == form.generationType } ?: VideoStudioFeatureItems.first()
@@ -776,9 +781,17 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
 
             // Action Buttons: Generate Video & Queue Video Job
             item {
+                val context = androidx.compose.ui.platform.LocalContext.current
+                val activity = context as? android.app.Activity
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button(
-                        onClick = { viewModel.startGeneration() },
+                        onClick = {
+                            if (activity != null) {
+                                com.example.ui.AdManager.showInterstitial(activity) { viewModel.startGeneration() }
+                            } else {
+                                viewModel.startGeneration()
+                            }
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(52.dp)

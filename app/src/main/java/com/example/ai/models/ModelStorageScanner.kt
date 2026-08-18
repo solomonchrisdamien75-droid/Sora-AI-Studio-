@@ -38,6 +38,12 @@ class ModelStorageScanner(
     private val _scanProgress = MutableStateFlow(StorageScanProgress())
     val scanProgress: StateFlow<StorageScanProgress> = _scanProgress.asStateFlow()
 
+    private var customSafUri: Uri? = null
+
+    fun setCustomSafUri(uri: Uri?) {
+        customSafUri = uri
+    }
+
     /**
      * Reconciles registered database records against physical storage.
      * If a record claims to be downloaded, verifies that the file actually exists and is readable.
@@ -102,6 +108,18 @@ class ModelStorageScanner(
                 if (dir.exists() && dir.isDirectory) {
                     _scanProgress.value = _scanProgress.value.copy(currentPath = dir.absolutePath)
                     scanDirectoryRecursively(dir, discoveredFiles)
+                }
+            }
+
+            // Scan Custom SAF Directory
+            if (customSafUri != null) {
+                _scanProgress.value = _scanProgress.value.copy(
+                    stageDescription = "Scanning Custom SAF Directory...",
+                    progressPercent = 40
+                )
+                val docDir = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, customSafUri!!)
+                if (docDir != null) {
+                    importSafDirectoryRecursively(docDir)
                 }
             }
 
@@ -282,6 +300,32 @@ class ModelStorageScanner(
                 val ext = f.extension.lowercase()
                 if (ext in listOf("gguf", "onnx", "tflite", "litert", "safetensors", "pt", "pth", "bin", "mnn", "ncnn")) {
                     result.add(f)
+                }
+            }
+        }
+    }
+
+    private suspend fun importSafDirectoryRecursively(dir: androidx.documentfile.provider.DocumentFile, maxDepth: Int = 3, currentDepth: Int = 0) {
+        if (currentDepth > maxDepth) return
+        val files = dir.listFiles()
+        for (file in files) {
+            if (file.isDirectory) {
+                importSafDirectoryRecursively(file, maxDepth, currentDepth + 1)
+            } else if (file.isFile) {
+                val name = file.name ?: ""
+                val ext = name.substringAfterLast('.').lowercase()
+                if (ext in listOf("gguf", "onnx", "tflite", "litert", "safetensors", "pt", "pth", "bin", "mnn", "ncnn")) {
+                    val result = importAndValidateModel(
+                        name = name.substringBeforeLast('.'),
+                        format = ext,
+                        modelType = if (name.contains("video", true)) "VIDEO" else "IMAGE",
+                        ramMb = 1024,
+                        pathOrUri = file.uri.toString(),
+                        storageSource = "SD_CARD"
+                    )
+                    if (result.first) {
+                        // Update progress if needed
+                    }
                 }
             }
         }

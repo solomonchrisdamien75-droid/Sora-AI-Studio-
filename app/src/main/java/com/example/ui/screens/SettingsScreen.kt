@@ -653,7 +653,33 @@ fun SettingsScreen(viewModel: SoraMainViewModel) {
         }
 
         // ==========================================
-        // 4. INFERENCE MODE (Screenshot 2)
+        // 4. HOW TO UPLOAD AI MODELS
+        // ==========================================
+        item {
+            SoraGlassCard(borderColor = NeonCyan) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "HOW TO UPLOAD AI MODELS",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = NeonCyan,
+                        letterSpacing = 1.sp
+                    )
+                    Text(
+                        text = "1. Navigate to the 'Models' screen via the main menu.\n" +
+                               "2. Tap the '+' button to manually import a model file.\n" +
+                               "3. Select your GGUF/ONNX/TFLite file from your SD Card or device storage.\n" +
+                               "4. Alternatively, use the 'Select SAF Tree' option here in Settings to choose a whole folder of models on your SD Card.\n" +
+                               "5. Run 'Reconcile Storage' to register all new models automatically.",
+                        fontSize = 12.sp,
+                        color = TextSecondary
+                    )
+                }
+            }
+        }
+
+        // ==========================================
+        // 5. INFERENCE MODE (Screenshot 2)
         // ==========================================
         item {
             SoraGlassCard(borderColor = CardBorder) {

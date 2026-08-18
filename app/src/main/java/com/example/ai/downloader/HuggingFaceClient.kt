@@ -70,6 +70,9 @@ class HuggingFaceClient(
                         "LITERET" -> "model.tflite"
                         else -> "pytorch_model.bin"
                     }
+                    
+                    val siblingInfo = item.siblings?.firstOrNull { it.rfilename == targetFile }
+                    val dynamicSizeBytes = siblingInfo?.size ?: siblingInfo?.lfs?.size ?: 1_650_000_000L
 
                     HuggingFaceModelInfo(
                         id = modelId,
@@ -79,7 +82,7 @@ class HuggingFaceClient(
                         likes = item.likes,
                         format = detectedFormat,
                         modelType = detectedType,
-                        sizeBytes = 1_650_000_000L,
+                        sizeBytes = dynamicSizeBytes,
                         ramRequiredMb = 3400,
                         downloadUrl = "https://huggingface.co/$modelId/resolve/main/$targetFile",
                         tags = if (item.tags.isNotEmpty()) item.tags else listOf("huggingface", "retrofit"),

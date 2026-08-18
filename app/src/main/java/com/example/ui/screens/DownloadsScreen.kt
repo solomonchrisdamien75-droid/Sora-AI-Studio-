@@ -341,8 +341,9 @@ fun DownloadsScreen(viewModel: SoraMainViewModel) {
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    val isCurrent = dlState != null && (dlState?.modelId == model.id || dlState?.modelName == model.name)
-                                    if (isCurrent) {
+                                    val isCurrent = dlState != null && dlState?.modelId == model.id
+                                    
+                                    if (isCurrent && !(dlState?.isPaused ?: false)) {
                                         IconButton(onClick = { viewModel.pauseModelDownload(model.id) }) {
                                             Icon(Icons.Default.Pause, contentDescription = "Pause", tint = AccentRed)
                                         }

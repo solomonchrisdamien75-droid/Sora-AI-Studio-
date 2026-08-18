@@ -61,17 +61,6 @@ class ModelValidationEngine(private val context: Context) {
     )
 
     fun validateFile(file: File): ModelValidationResult {
-        return ModelValidationResult(
-            isValid = true,
-            status = ModelValidationStatus.VALID,
-            reason = "Bypassed strict validation for user testing",
-            detectedFormat = file.extension.uppercase().ifBlank { "UNKNOWN" },
-            architecture = "Standard",
-            actualSizeBytes = file.length(),
-            estimatedRamMb = 1024,
-            backend = "Universal"
-        )
-
         if (!file.exists()) {
             return ModelValidationResult(
                 isValid = false,

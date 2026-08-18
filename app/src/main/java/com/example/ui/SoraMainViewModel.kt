@@ -577,6 +577,8 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
 
     fun scanStorageForModels() {
         viewModelScope.launch {
+            val uri = _customSafTreeUri.value?.let { Uri.parse(it) }
+            repository.modelStorageScanner.setCustomSafUri(uri)
             val result = repository.modelStorageScanner.reconcileDatabaseWithStorage()
             refreshStorageVolumes()
             _settingsStatusMessage.value = "Storage Scan complete: ${result.validModelsCount} verified model(s) on device"
@@ -1222,6 +1224,7 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
     fun startGeneration() {
         val form = _generationForm.value
         val profile = _hardwareProfile.value
+        android.util.Log.d("SoraStudio", "startGeneration: form=$form, profile=$profile")
 
         if (profile != null && profile.availableRamGb < 1.5f && form.mode == "CINEMA") {
             _generationForm.value = form.copy(
