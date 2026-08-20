@@ -154,6 +154,27 @@ interface StoryProjectDao {
 }
 
 @Dao
+interface ManhwaProjectDao {
+    @Query("SELECT * FROM manhwa_projects ORDER BY updatedAt DESC")
+    fun getAllManhwaProjects(): Flow<List<ManhwaProjectEntity>>
+
+    @Query("SELECT * FROM manhwa_projects WHERE id = :id LIMIT 1")
+    suspend fun getManhwaProjectById(id: String): ManhwaProjectEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertManhwaProject(project: ManhwaProjectEntity)
+
+    @Update
+    suspend fun updateManhwaProject(project: ManhwaProjectEntity)
+
+    @Delete
+    suspend fun deleteManhwaProject(project: ManhwaProjectEntity)
+
+    @Query("DELETE FROM manhwa_projects WHERE id = :id")
+    suspend fun deleteManhwaProjectById(id: String)
+}
+
+@Dao
 interface ScriptProjectDao {
     @Query("SELECT * FROM script_projects ORDER BY updatedAt DESC")
     fun getAllScriptProjects(): Flow<List<ScriptProjectEntity>>

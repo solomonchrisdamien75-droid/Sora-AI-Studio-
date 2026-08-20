@@ -10,15 +10,15 @@ import java.io.RandomAccessFile
 import kotlin.math.roundToInt
 
 data class RealtimeTelemetryState(
-    val cpuUsagePercent: Int = 18,
-    val ramUsedMb: Int = 1840,
-    val ramTotalMb: Int = 5800,
-    val ramUsedPercent: Int = 32,
-    val gpuLoadPercent: Int = 24,
+    val cpuUsagePercent: Int? = null,
+    val ramUsedMb: Int = 0,
+    val ramTotalMb: Int = 0,
+    val ramUsedPercent: Int = 0,
+    val gpuLoadPercent: Int? = null, // null if unavailable
     val activeInferenceFps: Float = 0f,
-    val thermalStatus: String = "Normal (34°C)",
+    val thermalStatus: String = "Normal",
     val isThermalThrottled: Boolean = false,
-    val activeCores: Int = 8,
+    val activeCores: Int = Runtime.getRuntime().availableProcessors(),
     val isInferencing: Boolean = false,
     val activeModelCount: Int = 0,
     val totalActiveModelsRamMb: Int = 0
@@ -47,31 +47,22 @@ class TelemetryPerformanceMonitor(private val context: Context) {
             val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
             val memInfo = ActivityManager.MemoryInfo()
 
-            var previousCpuTime: Long = 0
-            var previousIdleTime: Long = 0
-
             while (isActive) {
                 activityManager.getMemoryInfo(memInfo)
                 val totalMb = (memInfo.totalMem / (1024 * 1024)).toInt()
                 val availMb = (memInfo.availMem / (1024 * 1024)).toInt()
                 val usedMb = (totalMb - availMb).coerceAtLeast(0)
-                val ramPct = if (totalMb > 0) ((usedMb.toDouble() / totalMb.toDouble()) * 100).toInt() else 35
+                val ramPct = if (totalMb > 0) ((usedMb.toDouble() / totalMb.toDouble()) * 100).toInt() else 0
 
                 val currentCpuPct = readCpuUsagePercent()
                 val current = _telemetryState.value
 
-                val gpuEst = if (current.isInferencing) {
-                    (65 + (System.currentTimeMillis() % 25)).toInt().coerceIn(50, 98)
-                } else {
-                    (12 + (System.currentTimeMillis() % 10)).toInt().coerceIn(5, 30)
-                }
-
                 _telemetryState.value = current.copy(
-                    cpuUsagePercent = if (current.isInferencing) (currentCpuPct + 45).coerceAtMost(99) else currentCpuPct,
+                    cpuUsagePercent = currentCpuPct, // Actually read CPU or null
                     ramUsedMb = usedMb,
                     ramTotalMb = totalMb,
                     ramUsedPercent = ramPct,
-                    gpuLoadPercent = gpuEst
+                    gpuLoadPercent = null // Android GPU load requires root or vendor specific APIs, so unavailable
                 )
 
                 delay(1000)
@@ -88,7 +79,7 @@ class TelemetryPerformanceMonitor(private val context: Context) {
         )
     }
 
-    private fun readCpuUsagePercent(): Int {
+    private fun readCpuUsagePercent(): Int? {
         return try {
             val reader = RandomAccessFile("/proc/stat", "r")
             val load = reader.readLine()
@@ -97,10 +88,9 @@ class TelemetryPerformanceMonitor(private val context: Context) {
             val idle = toks[4].toLong()
             val cpu = toks[1].toLong() + toks[2].toLong() + toks[3].toLong() + toks[5].toLong() + toks[6].toLong() + toks[7].toLong()
             val total = idle + cpu
-            if (total > 0) ((cpu.toDouble() / total.toDouble()) * 100).roundToInt().coerceIn(8, 95) else 22
+            if (total > 0) ((cpu.toDouble() / total.toDouble()) * 100).roundToInt().coerceIn(0, 100) else null
         } catch (_: Exception) {
-            // Contextual fallback based on background loads
-            24 + (System.currentTimeMillis() % 15).toInt()
+            null
         }
     }
 }

@@ -1,5 +1,8 @@
 package com.example.manhwa.engine
 
+import com.example.ai.inference.AIInferenceManager
+import com.example.ai.inference.AIInferenceRequest
+import com.example.ai.inference.model.ModelCapability
 import com.example.manhwa.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -9,7 +12,7 @@ import kotlinx.coroutines.withContext
  * StoryContinuationEngine manages narrative continuity across episodes using StoryState memory.
  * Supports Option A: Continue Recap (original lore) and Option B: Create Original Continuation (fictional branch with disclaimer).
  */
-class StoryContinuationEngine {
+class StoryContinuationEngine(private val inferenceManager: AIInferenceManager? = null) {
 
     data class ContinuationResult(
         val episodeNumber: Int,
@@ -40,8 +43,38 @@ class StoryContinuationEngine {
         val nextChapter = currentStoryState.currentChapter + 1
         val isOriginal = continuationType == ContinuationType.CREATE_ORIGINAL_CONTINUATION
 
-        onProgress(75, if (isOriginal) "Generating original non-canon narrative branch..." else "Extrapolating official canon recap continuation...")
-        delay(150)
+        onProgress(75, if (isOriginal) "Generating original narrative branch via local inference..." else "Extrapolating recap continuation...")
+
+        var generatedNarrative: String? = null
+        if (inferenceManager != null) {
+            val prompt = """
+                Generate the next scene continuation for Episode $nextEp (Chapter $nextChapter).
+                Previous Location: ${currentStoryState.currentLocation}
+                Objective: ${currentStoryState.currentObjective}
+                User Guidance: $customPrompt
+                Type: ${if (isOriginal) "Original Creative Alternate Branch" else "Canon Progression"}
+                
+                Provide 3 cinematic scene descriptions with narration and dialogue.
+            """.trimIndent()
+
+            val response = inferenceManager.generateText(
+                AIInferenceRequest(
+                    prompt = prompt,
+                    systemPrompt = "You are a specialized Manhwa Webtoon Story Director and Scriptwriter.",
+                    requiredCapability = ModelCapability.SCRIPT_WRITING,
+                    maxTokens = 1200
+                )
+            )
+            generatedNarrative = response.getOrNull()?.text
+        }
+
+        val scene1Narration = if (!generatedNarrative.isNullOrBlank()) {
+            generatedNarrative.lines().firstOrNull { it.isNotBlank() } ?: "With the previous conflict resolved, a new path opened."
+        } else if (isOriginal) {
+            "With the Demon King defeated, an ancient celestial portal opened above the castle ruins."
+        } else {
+            "As the dust settled, Jin-Woo collected the Demon Sovereign's core and prepared to craft the Holy Water of Life."
+        }
 
         val newScenes = listOf(
             ManhwaScene(
@@ -49,11 +82,7 @@ class StoryContinuationEngine {
                 sceneNumber = 1,
                 panelId = "P_CONT_001",
                 durationMs = 4800L,
-                narrationText = if (isOriginal) {
-                    "With the Demon King defeated, an ancient celestial portal opened above the castle ruins."
-                } else {
-                    "As the dust settled, Jin-Woo collected the Demon Sovereign's core and prepared to craft the Holy Water of Life."
-                },
+                narrationText = scene1Narration,
                 dialogueText = "This power... it's far greater than anything on Earth.",
                 speakerCharacterId = "CHAR_01",
                 actionType = ActionType.LOOKING,

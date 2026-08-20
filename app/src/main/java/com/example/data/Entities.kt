@@ -174,6 +174,22 @@ data class ScriptProjectEntity(
     val updatedAt: Long = System.currentTimeMillis()
 )
 
+@Entity(tableName = "manhwa_projects")
+data class ManhwaProjectEntity(
+    @PrimaryKey val id: String,
+    val title: String,
+    val episodeTitle: String,
+    val description: String,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+    val thumbnailUri: String? = null,
+    val projectDir: String,
+    val status: String = "DRAFT",
+    val totalPanels: Int = 0,
+    val totalScenes: Int = 0,
+    val manhwaProjectJson: String = "{}"
+)
+
 @Entity(tableName = "generation_logs")
 data class GenerationLogEntity(
     @PrimaryKey val id: String,

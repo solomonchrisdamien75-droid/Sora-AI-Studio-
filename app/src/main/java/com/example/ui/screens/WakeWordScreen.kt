@@ -34,11 +34,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ai.wakeword.VoiceActionType
 import com.example.ai.wakeword.VoiceEventItem
+import com.example.data.AiModelEntity
 import com.example.ui.SoraMainViewModel
 import com.example.ui.SoraTab
 import com.example.ui.components.SoraGlassCard
 import com.example.ui.components.SoraSectionHeader
 import com.example.ui.theme.*
+import androidx.compose.ui.text.style.TextOverflow
 
 @Composable
 fun WakeWordScreen(viewModel: SoraMainViewModel) {
@@ -55,8 +57,10 @@ fun WakeWordScreen(viewModel: SoraMainViewModel) {
     val voiceLogs by viewModel.voiceLogHistory.collectAsState()
     val ttsEnabled by viewModel.isTtsVoiceEnabled.collectAsState()
     val continuous by viewModel.continuousListening.collectAsState()
+    val activeModel by viewModel.activeLoadedModel.collectAsState()
 
     var showConsentDialog by remember { mutableStateOf(false) }
+    var showModelRequiredDialog by remember { mutableStateOf(false) }
     var testManualInput by remember { mutableStateOf("") }
     var selectedCategoryFilter by remember { mutableStateOf<VoiceActionType?>(null) }
 
@@ -96,6 +100,11 @@ fun WakeWordScreen(viewModel: SoraMainViewModel) {
                 subtitle = "Hands-free voice intelligence with on-device background detection surpassing Alexa",
                 icon = Icons.Default.GraphicEq
             )
+        }
+
+        // Live Model Capability Header
+        item {
+            WakeWordModelCapabilityHeader(activeModel = activeModel, viewModel = viewModel)
         }
 
         // Background Privacy & Consent Status Banner
@@ -252,7 +261,9 @@ fun WakeWordScreen(viewModel: SoraMainViewModel) {
                     ) {
                         Button(
                             onClick = {
-                                if (!consentGranted) {
+                                if (activeModel == null && !isRunning) {
+                                    showModelRequiredDialog = true
+                                } else if (!consentGranted) {
                                     showConsentDialog = true
                                 } else {
                                     if (!isRunning) {
@@ -692,6 +703,68 @@ fun WakeWordScreen(viewModel: SoraMainViewModel) {
             }
         )
     }
+
+    // AI Model in RAM Required Dialog
+    if (showModelRequiredDialog) {
+        AlertDialog(
+            onDismissRequest = { showModelRequiredDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Memory, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("AI Model in RAM Required", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Hands-Free Voice and Wake-Word Engine requires acoustic and NPU model weights loaded into device RAM for real-time speech recognition and intent routing.",
+                        fontSize = 12.5.sp,
+                        color = TextSecondary
+                    )
+                    Surface(
+                        color = GlassSurfaceVariant,
+                        shape = RoundedCornerShape(8.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, NeonCyan.copy(alpha = 0.4f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Recommended: Sora-WakeWord-Acoustic-7B", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = NeonCyan)
+                            Text("Format: LiteRT / GGUF (Quantized Wake Word)", fontSize = 11.sp, color = TextPrimary)
+                            Text("RAM Allocated: ~1,850 MB", fontSize = 11.sp, color = NeonCyan)
+                            Text("Capabilities: Continuous Listening, Wake Phrase, Intent Routing", fontSize = 10.sp, color = TextSecondary)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showModelRequiredDialog = false
+                        viewModel.quickLoadModelAndStartGeneration()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(Icons.Default.Bolt, contentDescription = null, tint = DeepDarkBg, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("⚡ Quick-Load (1.8G)", color = DeepDarkBg, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = {
+                        showModelRequiredDialog = false
+                        viewModel.selectTab(com.example.ui.SoraTab.MODELS)
+                    },
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("Models Hub", color = NeonCyan)
+                }
+            },
+            containerColor = DeepDarkBg
+        )
+    }
 }
 
 @Composable
@@ -785,6 +858,85 @@ fun VoiceLogCard(
                 fontSize = 11.sp,
                 color = TextSecondary
             )
+        }
+    }
+}
+
+@Composable
+fun WakeWordModelCapabilityHeader(
+    activeModel: AiModelEntity?,
+    viewModel: SoraMainViewModel
+) {
+    Surface(
+        color = if (activeModel != null) AccentGreen.copy(alpha = 0.12f) else AccentRed.copy(alpha = 0.12f),
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(10.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, if (activeModel != null) AccentGreen.copy(alpha = 0.5f) else AccentRed.copy(alpha = 0.6f))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    imageVector = if (activeModel != null) Icons.Default.Memory else Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = if (activeModel != null) AccentGreen else AccentRed,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Text(
+                        text = if (activeModel != null) "RAM ALLOCATED: ${activeModel.name}" else "NO MODEL IN RAM (REQUIRED FOR WAKE-WORD)",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (activeModel != null) AccentGreen else AccentRed,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = if (activeModel != null) "${activeModel.ramRequiredMb} MB Allocated • Acoustic Listener Ready" else "Tap Quick-Load or visit Models Hub to allocate weights",
+                        fontSize = 10.sp,
+                        color = TextSecondary
+                    )
+                }
+            }
+
+            if (activeModel == null) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Button(
+                        onClick = { viewModel.quickLoadModelAndStartGeneration() },
+                        colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text("⚡ Quick-Load", fontSize = 10.sp, color = DeepDarkBg, fontWeight = FontWeight.Bold)
+                    }
+                    OutlinedButton(
+                        onClick = { viewModel.selectTab(com.example.ui.SoraTab.MODELS) },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonCyan),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text("Hub", fontSize = 10.sp)
+                    }
+                }
+            } else {
+                OutlinedButton(
+                    onClick = { viewModel.selectTab(com.example.ui.SoraTab.MODELS) },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AccentGreen),
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                    shape = RoundedCornerShape(6.dp)
+                ) {
+                    Text("Switch", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
+            }
         }
     }
 }

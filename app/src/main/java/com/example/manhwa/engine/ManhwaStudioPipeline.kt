@@ -9,11 +9,17 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 
+import com.example.ai.inference.AIInferenceManager
+import com.example.ai.hardware.TelemetryPerformanceMonitor
+
 /**
  * ManhwaStudioPipeline coordinates the end-to-end 20-step AI production pipeline,
  * manages independent background tasks, telemetry, model capability routing, and project state.
  */
-class ManhwaStudioPipeline(private val context: Context) {
+class ManhwaStudioPipeline(
+    private val context: Context,
+    val inferenceManager: AIInferenceManager
+) {
 
     val panelEngine = PanelAnalysisEngine(context)
     val audioEngine = AudioAnalysisEngine(context)
@@ -21,9 +27,9 @@ class ManhwaStudioPipeline(private val context: Context) {
     val animationEngine = ManhwaAnimationEngine(context)
     val lipSyncEngine = LipSyncEngine()
     val cameraEngine = ManhwaCameraEngine()
-    val recapEngine = RecapScriptEngine()
-    val continuationEngine = StoryContinuationEngine()
-    val aiManhwaGenerator = AiManhwaGenerator(context)
+    val recapEngine = RecapScriptEngine(inferenceManager)
+    val continuationEngine = StoryContinuationEngine(inferenceManager)
+    val aiManhwaGenerator = AiManhwaGenerator(context, inferenceManager)
     val qcEngine = QualityControlEngine()
     val videoAssembler = ManhwaVideoAssembler(context)
     val projectManager = ManhwaProjectManager(context)
@@ -44,6 +50,19 @@ class ManhwaStudioPipeline(private val context: Context) {
         recapConfig: RecapConfig,
         onProjectUpdated: (ManhwaProject) -> Unit
     ) = withContext(Dispatchers.IO) {
+        val activeModel = inferenceManager.inferenceEngineManager.activeLoadedModel.value
+        if (activeModel == null) {
+            _currentTask.value = ManhwaTask(
+                taskType = ManhwaTaskType.PANEL_ANALYSIS,
+                title = "Model in RAM Required",
+                progressPercent = 0,
+                currentStep = "Error: No AI model is loaded into device memory. Please load a model in Models Hub.",
+                isRunning = false,
+                isCompleted = false
+            )
+            throw IllegalStateException("⚠️ AI Model in RAM Required: No model is loaded into device RAM. Please load an AI model in Models Hub before running the Manhwa Recap pipeline.")
+        }
+
         var currentProj = project.copy(status = ProjectStatus.ANALYZING_PANELS)
         onProjectUpdated(currentProj)
 
@@ -192,18 +211,19 @@ class ManhwaStudioPipeline(private val context: Context) {
         type: ManhwaTaskType,
         title: String,
         progress: Int,
-        step: String
+        step: String,
+        model: String? = null
     ) {
         _currentTask.value = ManhwaTask(
             taskType = type,
             title = title,
             progressPercent = progress.coerceIn(0, 100),
             currentStep = step,
-            estimatedRemainingSeconds = ((100 - progress) * 0.6f).toInt(),
-            ramUsageMb = 420 + (progress * 2),
-            cpuUsagePercent = (30 + (progress % 40)),
-            gpuUsagePercent = (60 + (progress % 35)),
-            currentModel = "Manhwa-Composite-Engine-v2",
+            estimatedRemainingSeconds = null, // Can't reliably estimate
+            ramUsageMb = null, // This is monitored by TelemetryPerformanceMonitor now
+            cpuUsagePercent = null,
+            gpuUsagePercent = null,
+            currentModel = model,
             isRunning = true,
             isCompleted = false
         )

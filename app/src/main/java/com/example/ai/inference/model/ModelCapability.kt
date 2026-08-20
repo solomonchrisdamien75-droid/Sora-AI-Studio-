@@ -235,17 +235,38 @@ object ModelCapabilityDetector {
         availableModels: List<AiModelEntity> = emptyList()
     ): ModelCompatibilityResult {
         if (model == null) {
-            val fallback = availableModels.firstOrNull { detectCapabilities(it).contains(requiredCapability) }?.name
-                ?: "a compatible ${requiredCapability.label} model"
-            return ModelCompatibilityResult(
-                isCompatible = false,
-                modelName = "None",
-                requestedCapability = requiredCapability,
-                supportedCapabilities = emptySet(),
-                supportedStudios = emptySet(),
-                errorMessage = "No model is currently selected for ${requiredCapability.label}.",
-                recommendedAlternative = fallback
-            )
+            val loadedMatch = availableModels.firstOrNull { detectCapabilities(it).contains(requiredCapability) }
+            if (loadedMatch != null) {
+                val caps = detectCapabilities(loadedMatch)
+                return ModelCompatibilityResult(
+                    isCompatible = true,
+                    modelName = loadedMatch.name,
+                    requestedCapability = requiredCapability,
+                    supportedCapabilities = caps,
+                    supportedStudios = detectSupportedStudios(loadedMatch),
+                    errorMessage = null,
+                    recommendedAlternative = null
+                )
+            } else {
+                return ModelCompatibilityResult(
+                    isCompatible = false,
+                    modelName = "None (No Model Loaded in RAM)",
+                    requestedCapability = requiredCapability,
+                    supportedCapabilities = emptySet(),
+                    supportedStudios = emptySet(),
+                    errorMessage = "⚠️ AI Model Required in RAM: No active model loaded in device memory supports ${requiredCapability.label}. Please load a model into RAM.",
+                    recommendedAlternative = when (requiredCapability) {
+                        ModelCapability.TEXT_GENERATION, ModelCapability.CHAT, ModelCapability.STORY_WRITING, ModelCapability.SCRIPT_WRITING ->
+                            "Qwen-2.5-Coder-7B (GGUF) or Llama-3.2-3B (LiteRT)"
+                        ModelCapability.TEXT_TO_SPEECH, ModelCapability.VOICE_CLONING, ModelCapability.VOICE_ENHANCEMENT -> "Kokoro-82M-TTS or Neural-Voice-v2 (LiteRT)"
+                        ModelCapability.SPEECH_TO_TEXT -> "Whisper-Tiny (ONNX)"
+                        ModelCapability.IMAGE_GENERATION, ModelCapability.IMAGE_EDITING, ModelCapability.D3_SYNTHESIS -> "StableDiffusion-v1.5 (SafeTensors/ONNX) or Flux.1-Schnell (LiteRT)"
+                        ModelCapability.VIDEO_GENERATION, ModelCapability.VIDEO_ENHANCEMENT, ModelCapability.LIP_SYNC -> "Sora-LiteRT-v1 or Wan2.1-1.3B (LiteRT)"
+                        ModelCapability.MANHWA_PROCESSING -> "ManhwaDiffusion-v2 or Qwen-2.5-VL-7B (GGUF)"
+                        else -> "a compatible model"
+                    }
+                )
+            }
         }
 
         val supported = detectCapabilities(model)

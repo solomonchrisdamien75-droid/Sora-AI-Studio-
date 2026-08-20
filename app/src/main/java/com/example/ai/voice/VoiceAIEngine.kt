@@ -56,12 +56,16 @@ class VoiceAIEngine(
     private val projectStorageManager: ProjectStorageManager
 ) {
     val availableVoices = listOf(
+        VoicePersona("manhwa_recap_hype", "Manhwa Recap Pro (Action)", "Male", "Fast-paced, energetic recap narrator with high tension", 1.05f, "Sharp attack, hype anime recap style"),
         VoicePersona("cinema_baritone", "Cinema Deep Baritone", "Male", "Deep cinematic movie trailer voice", 0.85f, "Rich low-end resonant timbre"),
+        VoicePersona("epic_lore_master", "Epic Lore Master", "Male", "Authoritative mystical worldbuilding cadence", 0.90f, "Warm resonant storyteller delivery"),
         VoicePersona("warm_female", "Warm Narrator Female", "Female", "Soothing, articulate documentary narrator", 1.15f, "Crystal clear treble with warm mids"),
-        VoicePersona("cyber_ai", "Cyberpunk AI Voice", "Neutral", "Futuristic synth cadence with light robotic vocoder", 1.0f, "Crisp electronic modulation"),
-        VoicePersona("anime_heroine", "Anime Heroine High", "Female", "Energetic, expressive Japanese/English anime protagonist", 1.35f, "Bright, dynamic vocal range"),
-        VoicePersona("documentary_soft", "Documentary Soft", "Male", "Intimate, thoughtful history & nature narrator", 0.95f, "Soft breathy delivery, high intelligibility"),
-        VoicePersona("action_hype", "Action Hype Male", "Male", "Fast-paced, aggressive promo voice", 1.05f, "Punchy attack, compressed dynamic range")
+        VoicePersona("shonen_protagonist", "Shonen Protagonist", "Male", "Determined, passionate hero voice", 1.20f, "High energy dynamic range"),
+        VoicePersona("villain_sinister", "Sinister Sovereign", "Male", "Cold, calculating dark overlord tone", 0.75f, "Low gravelly vocal compression"),
+        VoicePersona("cyber_ai", "Awakened System UI / Cyber AI", "Neutral", "Futuristic RPG status window voice", 1.0f, "Crisp electronic resonance"),
+        VoicePersona("anime_heroine", "Anime Heroine High", "Female", "Energetic, expressive anime heroine", 1.35f, "Bright, dynamic vocal range"),
+        VoicePersona("documentary_soft", "Documentary Soft", "Male", "Intimate, thoughtful history narrator", 0.95f, "Soft breathy delivery, high intelligibility"),
+        VoicePersona("action_hype", "Action Hype Promo", "Male", "Fast-paced promo voice", 1.10f, "Punchy attack, compressed dynamic range")
     )
 
     private val _currentVoiceProject = MutableStateFlow(VoiceProject())
@@ -102,9 +106,17 @@ class VoiceAIEngine(
         _isGenerating.value = true
         _statusMessage.value = null
 
-        val compCheck = inferenceManager.validateCapability(selectedModel, ModelCapability.TEXT_TO_SPEECH)
+        val activeModel = selectedModel ?: inferenceManager.inferenceEngineManager.activeLoadedModel.value
+        if (activeModel == null) {
+            _isGenerating.value = false
+            val msg = "⚠️ AI Model in RAM Required: No neural voice/audio model is loaded in device memory. Please load an AI model in Models Hub before synthesizing speech."
+            _statusMessage.value = msg
+            return@withContext Result.failure(IllegalStateException(msg))
+        }
+
+        val compCheck = inferenceManager.validateCapability(activeModel, ModelCapability.TEXT_TO_SPEECH)
         // If an incompatible model is chosen, notify
-        if (selectedModel != null && !compCheck.isCompatible) {
+        if (!compCheck.isCompatible) {
             _isGenerating.value = false
             val msg = compCheck.errorMessage ?: "Selected model does not support Text-To-Speech."
             _statusMessage.value = msg
@@ -117,7 +129,7 @@ class VoiceAIEngine(
                 jobId = jobId,
                 type = AIJobType.VOICE_SYNTHESIS,
                 title = "TTS: $title",
-                modelName = selectedModel?.name ?: "Neural-TTS-LiteRT",
+                modelName = activeModel.name,
                 totalSteps = 100,
                 inputDescription = "Voice: $voiceName, Speed: ${speed}x, Pitch: ${pitch}x, Words: ${text.split(" ").size}"
             )

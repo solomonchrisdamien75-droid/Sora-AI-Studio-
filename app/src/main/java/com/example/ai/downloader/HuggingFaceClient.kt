@@ -72,7 +72,16 @@ class HuggingFaceClient(
                     }
                     
                     val siblingInfo = item.siblings?.firstOrNull { it.rfilename == targetFile }
-                    val dynamicSizeBytes = siblingInfo?.size ?: siblingInfo?.lfs?.size ?: 1_650_000_000L
+                    val actualSiblingSize = siblingInfo?.size ?: siblingInfo?.lfs?.size
+                    val dynamicSizeBytes = com.example.ai.models.ModelSizeEstimator.estimateSizeBytes(
+                        modelName = modelName,
+                        filename = targetFile,
+                        tags = item.tags,
+                        format = detectedFormat,
+                        modelType = detectedType,
+                        actualSize = actualSiblingSize
+                    )
+                    val dynamicRamMb = com.example.ai.models.ModelSizeEstimator.estimateRamMb(dynamicSizeBytes)
 
                     HuggingFaceModelInfo(
                         id = modelId,
@@ -83,7 +92,7 @@ class HuggingFaceClient(
                         format = detectedFormat,
                         modelType = detectedType,
                         sizeBytes = dynamicSizeBytes,
-                        ramRequiredMb = 3400,
+                        ramRequiredMb = dynamicRamMb,
                         downloadUrl = "https://huggingface.co/$modelId/resolve/main/$targetFile",
                         tags = if (item.tags.isNotEmpty()) item.tags else listOf("huggingface", "retrofit"),
                         availableFiles = siblingFilenames

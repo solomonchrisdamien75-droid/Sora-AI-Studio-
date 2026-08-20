@@ -1,5 +1,8 @@
 package com.example.manhwa.engine
 
+import com.example.ai.inference.AIInferenceManager
+import com.example.ai.inference.AIInferenceRequest
+import com.example.ai.inference.model.ModelCapability
 import com.example.manhwa.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -9,7 +12,7 @@ import kotlinx.coroutines.withContext
  * RecapScriptEngine generates fully synchronized recap scripts, YouTube production packages,
  * and viral Manhwa Shorts strictly mapped to actual Panel IDs and Scene IDs.
  */
-class RecapScriptEngine {
+class RecapScriptEngine(private val inferenceManager: AIInferenceManager) {
 
     data class RecapProductionPackage(
         val title: String,
@@ -47,19 +50,54 @@ class RecapScriptEngine {
         panels: List<ManhwaPanel>,
         recapConfig: RecapConfig,
         onProgress: (Int, String) -> Unit = { _, _ -> }
-    ): RecapProductionPackage = withContext(Dispatchers.Default) {
-        onProgress(20, "Analyzing panel flow & narrative tension arcs...")
-        delay(120)
+    ): Result<RecapProductionPackage> = withContext(Dispatchers.Default) {
+        val activeModel = inferenceManager.inferenceEngineManager.activeLoadedModel.value
+        if (activeModel == null) {
+            return@withContext Result.failure(
+                IllegalStateException("⚠️ AI Model in RAM Required: No model is loaded into device memory. Please load a model into RAM before generating a Manhwa recap.")
+            )
+        }
 
-        onProgress(45, "Crafting viral hook & script pacing for ${recapConfig.narrationStyle}...")
-        delay(150)
+        val compCheck = inferenceManager.validateCapability(activeModel, ModelCapability.SCRIPT_WRITING)
+        if (!compCheck.isCompatible) {
+            return@withContext Result.failure(
+                IllegalStateException(compCheck.errorMessage ?: "Active model '${activeModel.name}' does not support scriptwriting. Required capability: SCRIPT_WRITING")
+            )
+        }
+
+        onProgress(20, "Analyzing panel flow & narrative tension arcs...")
+        
+        val panelDescriptions = panels.take(10).joinToString("\n") { 
+            "Panel ${it.id}: [Action: ${it.actionDescription}] [Text: ${it.ocrTextBlocks.joinToString(" ") { t -> t.text }}]"
+        }
+
+        val prompt = """
+            Create a recap for a manhwa project titled "${project.title}".
+            Tone: ${recapConfig.tone}
+            Narration Style: ${recapConfig.narrationStyle}
+            Target Duration: ${recapConfig.targetDurationMinutes} minutes.
+            
+            Here are the panel descriptions:
+            $panelDescriptions
+            
+            Generate a short YouTube video hook and an exciting thumbnail concept.
+        """.trimIndent()
+
+        onProgress(45, "Crafting viral hook & script pacing using AI inference...")
+        
+        val response = inferenceManager.generateText(
+            AIInferenceRequest(
+                prompt = prompt,
+                systemPrompt = "You are an expert anime and manhwa recap scriptwriter for YouTube.",
+                requiredCapability = ModelCapability.SCRIPT_WRITING,
+                maxTokens = 2000
+            )
+        ).getOrElse {
+            return@withContext Result.failure(it)
+        }
 
         onProgress(70, "Synchronizing narration lines with Panel IDs (P001..P%03d)...".format(panels.size.coerceAtLeast(1)))
-        delay(130)
-
-        onProgress(90, "Assembling YouTube chapter timestamps & thumbnail prompt...")
-        delay(110)
-
+        
         val scriptLines = mutableListOf<RecapScriptLine>()
         var accumulatedTimeMs = 0L
 
@@ -68,59 +106,43 @@ class RecapScriptEngine {
             val duration = 4000L + (index * 500L % 2500L)
 
             val dialogue = panel.ocrTextBlocks.firstOrNull { it.category == OcrCategory.DIALOGUE }
-            val isHero = index % 2 == 0
+            
+            // In a real advanced AI pipeline, the LLM response would map the script to exact panel IDs.
+            // Since we are generating a simple text block right now, we interpolate existing panel text into the script structure.
+            val text = if (index == 0) response.text.take(150) + "..." else dialogue?.text ?: "The journey continues as the hero moves forward."
 
-            val line = if (dialogue != null) {
-                RecapScriptLine(
-                    sceneId = sceneId,
-                    panelId = panel.id,
-                    speaker = dialogue.speakerCharacterId ?: if (isHero) "Sung Jin-Woo" else "Demon King Baran",
-                    text = dialogue.text,
-                    cameraInstruction = "Slow push-in on character face with 1.25x scale",
-                    animationInstruction = "Mouth lip-sync visemes + subtle hair flutter",
-                    soundEffect = panel.soundEffects.firstOrNull() ?: "SWORD_SLASH",
-                    durationMs = duration
-                )
-            } else {
-                RecapScriptLine(
-                    sceneId = sceneId,
-                    panelId = panel.id,
-                    speaker = "[NARRATOR]",
-                    text = when (index % 4) {
-                        0 -> "After losing everything in the double dungeon, he returned as an awakened monarch."
-                        1 -> "Every step he took sent tremors through the hundredth floor of the demon castle."
-                        2 -> "The sovereign unleashed his lightning tempest, but the shadow lord didn't even flinch."
-                        else -> "With a single command, thousands of shadow soldiers rose from the abyss."
-                    },
-                    cameraInstruction = "Dynamic panoramic sweep across panel background",
-                    animationInstruction = "Speed line particles + dark aura mist overlay",
-                    soundEffect = panel.soundEffects.firstOrNull() ?: "AURA_HUM",
-                    durationMs = duration
-                )
-            }
+            val line = RecapScriptLine(
+                sceneId = sceneId,
+                panelId = panel.id,
+                speaker = dialogue?.speakerCharacterId ?: "[NARRATOR]",
+                text = text,
+                cameraInstruction = "Dynamic pan and zoom",
+                animationInstruction = "Subtle parallax motion",
+                soundEffect = panel.soundEffects.firstOrNull() ?: "SWOOSH",
+                durationMs = duration
+            )
+            
             scriptLines.add(line)
             accumulatedTimeMs += duration
         }
 
         val chapters = listOf(
-            RecapChapter("00:00 - The Return of the Weakest Hunter", "00:00", "S001"),
-            RecapChapter("01:45 - Entering the 100th Demon Floor", "01:45", "S006"),
-            RecapChapter("04:30 - Clash of Sovereigns & Shadow Army", "04:30", "S012"),
-            RecapChapter("07:15 - The True Awakening", "07:15", "S018")
+            RecapChapter("00:00 - Introduction", "00:00", "S001"),
+            RecapChapter("01:30 - The Main Event", "01:30", "S005")
         )
 
         onProgress(100, "YouTube recap production package generated.")
 
-        return@withContext RecapProductionPackage(
-            title = "He Was The Weakest E-Rank Hunter, But Returned As The Shadow God | Full Manhwa Recap",
-            hook = "Imagine waking up with the power of an immortal army while the entire world thinks you're dead...",
-            description = "Welcome back to Manhwa Studio! In today's recap, we break down the epic battle on the 100th floor. Animated with AI camera parallax, active lip-syncing, and immersive soundscapes.\n\nTimestamps:\n00:00 - Intro\n01:45 - Castle Infiltration\n04:30 - The Monarch Duel\n07:15 - Final Awakening",
-            thumbnailConcept = "Hero standing in center with glowing violet eyes, double daggers drawn, giant shadow soldiers towering behind him with high-contrast manhwa ink line art.",
+        return@withContext Result.success(RecapProductionPackage(
+            title = "${project.title} - Full Manhwa Recap",
+            hook = response.text.take(200),
+            description = "Welcome back to Manhwa Studio! \n\n" + response.text.take(300),
+            thumbnailConcept = "High-contrast manhwa ink line art. " + project.title,
             chapters = chapters,
             scriptLines = scriptLines,
             suggestedMusicTrack = "EPIC_ORCHESTRAL_BATTLE",
             estimatedTotalDurationSec = (accumulatedTimeMs / 1000).toInt()
-        )
+        ))
     }
 
     /**
@@ -140,7 +162,7 @@ class RecapScriptEngine {
                 RecapScriptLine(
                     sceneId = "S%03d".format(i + 1),
                     panelId = p.id,
-                    speaker = if (i % 2 == 0) "[NARRATOR]" else "Sung Jin-Woo",
+                    speaker = if (i % 2 == 0) "[NARRATOR]" else "Character",
                     text = if (i % 2 == 0) "He unleashed his true form!" else "Arise!",
                     cameraInstruction = "Ultra-fast zoom + shake on impact",
                     animationInstruction = "Speed line burst 9:16 vertical crop",

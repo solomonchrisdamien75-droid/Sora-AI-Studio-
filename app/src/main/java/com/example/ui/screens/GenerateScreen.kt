@@ -53,7 +53,8 @@ val VideoStudioFeatureItems = listOf(
     StudioFeatureItem("CAMERA_TRAJECTORY", 9, "Cinematic 3D Camera Trajectory", "Dolly, orbit, drone dive, boom & custom paths", "CAMERA", Icons.Default.CameraAlt, "Camera"),
     StudioFeatureItem("SLOW_MOTION_RIFE", 10, "RIFE Slow-Motion & Frame Interpolator", "2x, 4x, 8x (120 FPS) temporal frame synthesis", "SLOW-MO", Icons.Default.SlowMotionVideo, "Slow-Mo"),
     StudioFeatureItem("SPATIAL_3D_VIDEO", 11, "Spatial 3D Stereoscopic VR Video", "Side-by-side stereoscopy & depth parallax", "SPATIAL 3D", Icons.Default.ViewInAr, "3D VR"),
-    StudioFeatureItem("SCRIPT_TO_VIDEO", 12, "Multi-Scene Script Storyboard Director", "Multi-scene sequence rendering & automated continuity", "DIRECTOR", Icons.Default.Movie, "Storyboard")
+    StudioFeatureItem("SCRIPT_TO_VIDEO", 12, "Multi-Scene Script Storyboard Director", "Multi-scene sequence rendering & automated continuity", "DIRECTOR", Icons.Default.Movie, "Storyboard"),
+    StudioFeatureItem("CUSTOM_SCENE_CHAT_GEN", 13, "Custom Scene Chat Video Generator", "Chat wizard storyline planner, custom scene count, image uploads, voiceovers & transition prompts", "CUSTOM", Icons.Default.AutoFixHigh, "Custom")
 )
 
 /**
@@ -69,6 +70,8 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
     val queuedJobs by viewModel.queuedJobs.collectAsState()
     val isQueueProcessing by viewModel.isQueueProcessing.collectAsState()
     val allModels by viewModel.allModels.collectAsState()
+    val activeLoadedModel by viewModel.activeLoadedModel.collectAsState()
+    val showModelRequiredDialog by viewModel.showModelRequiredDialog.collectAsState()
     val hardwareProfile by viewModel.hardwareProfile.collectAsState()
     val telemetry by viewModel.realtimeTelemetry.collectAsState()
 
@@ -150,13 +153,18 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
         },
         containerColor = DeepDarkBg
     ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
+        if (form.generationType == "CUSTOM_SCENE_CHAT_GEN") {
+            Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+                CustomSceneChatGeneratorView(viewModel = viewModel, studioTitle = "Video Studio - Custom Scene Generator")
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
             // Quick 12-Feature horizontal chip selector + 3-line drawer trigger
             item {
                 LazyRow(
@@ -454,18 +462,24 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
 
                         val isImage = result.mediaType == "IMAGE" || result.filePath.endsWith(".png", true) || result.filePath.endsWith(".jpg", true) || result.filePath.endsWith(".jpeg", true)
                         val localFile = File(result.filePath)
+                        val previewImageFile = if (result.filePath.endsWith(".mp4", true)) {
+                            val pngSibling = File(result.filePath.substringBeforeLast(".") + ".png")
+                            if (pngSibling.exists()) pngSibling else localFile
+                        } else {
+                            localFile
+                        }
 
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(160.dp)
+                                .height(170.dp)
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(GlassSurfaceVariant)
                                 .border(1.dp, AccentGreen.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
                         ) {
-                            if (isImage && localFile.exists()) {
+                            if (previewImageFile.exists()) {
                                 AsyncImage(
-                                    model = localFile,
+                                    model = previewImageFile,
                                     contentDescription = "Generated Artwork",
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop
@@ -476,7 +490,7 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
                                         .fillMaxSize()
                                         .background(
                                             androidx.compose.ui.graphics.Brush.verticalGradient(
-                                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f))
+                                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))
                                             )
                                         )
                                 )
@@ -779,6 +793,105 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
                 }
             }
 
+            // Model in RAM Status & Hardware Acceleration Pipeline
+            item {
+                if (activeLoadedModel != null) {
+                    val model = activeLoadedModel!!
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(AccentGreen.copy(alpha = 0.12f))
+                            .border(1.dp, AccentGreen.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                            .padding(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.Memory, contentDescription = null, tint = AccentGreen, modifier = Modifier.size(22.dp))
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("ACTIVE IN RAM: ", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = AccentGreen)
+                                        Text(model.name, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary, maxLines = 1)
+                                    }
+                                    Text(
+                                        text = "${model.ramRequiredMb} MB RAM Allocated • GPU / NPU Diffusion Active",
+                                        fontSize = 10.sp,
+                                        color = TextSecondary
+                                    )
+                                }
+                            }
+                            OutlinedButton(
+                                onClick = { viewModel.selectTab(SoraTab.MODELS) },
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = AccentGreen)
+                            ) {
+                                Text("Switch", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(AccentRed.copy(alpha = 0.12f))
+                            .border(1.dp, AccentRed.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+                            .padding(12.dp)
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Warning, contentDescription = null, tint = AccentRed, modifier = Modifier.size(20.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("NO MODEL LOADED IN RAM", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = AccentRed)
+                                }
+                                SoraBadge(text = "REQUIRED", color = AccentRed)
+                            }
+                            Text(
+                                text = "Local neural video synthesis requires model weights loaded into device memory. Load a model into RAM to render.",
+                                fontSize = 11.sp,
+                                color = TextSecondary
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = { viewModel.quickLoadModelAndStartGeneration() },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = NeonCyan)
+                                ) {
+                                    Icon(Icons.Default.Bolt, contentDescription = null, tint = DeepDarkBg, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Quick-Load Model to RAM", color = DeepDarkBg, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                                OutlinedButton(
+                                    onClick = { viewModel.selectTab(SoraTab.MODELS) },
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonPurple)
+                                ) {
+                                    Text("Models Hub", fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Action Buttons: Generate Video & Queue Video Job
             item {
                 val context = androidx.compose.ui.platform.LocalContext.current
@@ -797,7 +910,7 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
                             .height(52.dp)
                             .testTag("generate_video_button"),
                         shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                        colors = ButtonDefaults.buttonColors(containerColor = if (activeLoadedModel != null) NeonCyan else NeonCyan.copy(alpha = 0.8f)),
                         enabled = activeJob == null
                     ) {
                         if (activeJob != null) {
@@ -807,7 +920,7 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
                         } else {
                             Icon(Icons.Default.Videocam, contentDescription = null, tint = DeepDarkBg)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Render Video Now", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DeepDarkBg)
+                            Text(if (activeLoadedModel != null) "Render Video Now" else "Load Model in RAM & Render", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DeepDarkBg)
                         }
                     }
 
@@ -831,6 +944,62 @@ fun GenerateScreen(viewModel: SoraMainViewModel) {
                 Spacer(modifier = Modifier.height(40.dp))
             }
         }
+    }
+}
+
+    if (showModelRequiredDialog) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissModelRequiredDialog() },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Memory, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Load Model into Device RAM", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Local video generation requires neural model weights loaded into device RAM for CPU/GPU/NPU hardware acceleration.",
+                        fontSize = 12.sp,
+                        color = TextSecondary
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(GlassSurfaceVariant)
+                            .padding(10.dp)
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Engine: Sora-LiteRT Diffusion", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = NeonCyan)
+                            Text("RAM Footprint: ~2,400 MB", fontSize = 11.sp, color = TextPrimary)
+                            Text("Execution: OpenCL GPU Shaders & NPU Delegate", fontSize = 10.sp, color = TextSecondary)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.quickLoadModelAndStartGeneration() },
+                    colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("Load Model & Start Render", color = DeepDarkBg, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = {
+                        viewModel.dismissModelRequiredDialog()
+                        viewModel.selectTab(SoraTab.MODELS)
+                    },
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("Manage Models")
+                }
+            }
+        )
     }
 
     if (showMenuModal) {

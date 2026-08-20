@@ -890,6 +890,7 @@ fun ManhwaRecapStoryView(
     onShowMessage: (String) -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
+    val loadedModel by pipeline.inferenceManager.inferenceEngineManager.activeLoadedModel.collectAsState()
     var targetLengthMin by remember { mutableIntStateOf(10) }
     var narrationStyle by remember { mutableStateOf("Cinematic Storyteller") }
     var tone by remember { mutableStateOf("Dark / Dramatic") }
@@ -906,6 +907,75 @@ fun ManhwaRecapStoryView(
                 subtitle = "YouTube Recap Generator & Episode Continuity Memory",
                 icon = Icons.Default.MenuBook
             )
+        }
+
+        // RAM Model Status Banner
+        item {
+            Surface(
+                color = if (loadedModel != null) AccentGreen.copy(alpha = 0.12f) else AccentRed.copy(alpha = 0.12f),
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, if (loadedModel != null) AccentGreen.copy(alpha = 0.5f) else AccentRed.copy(alpha = 0.5f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            if (loadedModel != null) Icons.Default.Memory else Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = if (loadedModel != null) AccentGreen else AccentRed,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = if (loadedModel != null) "Active Model in RAM: ${loadedModel?.name}" else "No Model Loaded in RAM",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (loadedModel != null) AccentGreen else AccentRed
+                            )
+                            Text(
+                                text = if (loadedModel != null) "${loadedModel?.ramRequiredMb} MB VRAM Allocated" else "Neural synthesis requires loaded model weights",
+                                fontSize = 9.5.sp,
+                                color = TextSecondary
+                            )
+                        }
+                    }
+
+                    if (loadedModel == null) {
+                        Button(
+                            onClick = {
+                                coroutineScope.launch {
+                                    val candidate = com.example.data.AiModelEntity(
+                                        id = "manhwa_recap_engine_q4",
+                                        name = "Manhwa-Recap-Vision-Engine-7B",
+                                        description = "Quantized GGUF neural engine for webtoon OCR and viral narrative recaps",
+                                        format = "GGUF",
+                                        modelType = "TEXT",
+                                        sizeBytes = 1_850_000_000L,
+                                        ramRequiredMb = 1850,
+                                        isDownloaded = true,
+                                        downloadState = "AVAILABLE"
+                                    )
+                                    pipeline.inferenceManager.inferenceEngineManager.loadModel(candidate)
+                                    onShowMessage("Allocated 1.8GB RAM for Manhwa Recap Engine.")
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = ElectricPink),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text("⚡ Quick-Load (1.8G)", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
         }
 
         // Recap Generation Card
@@ -931,14 +1001,22 @@ fun ManhwaRecapStoryView(
                     Spacer(modifier = Modifier.height(10.dp))
                     Button(
                         onClick = {
+                            if (loadedModel == null) {
+                                onShowMessage("⚠️ AI Model in RAM Required: Tap 'Quick-Load' above or load a model in Models Hub before generating a recap.")
+                                return@Button
+                            }
                             coroutineScope.launch {
-                                val pkg = pipeline.recapEngine.generateYouTubeRecap(
+                                val pkgResult = pipeline.recapEngine.generateYouTubeRecap(
                                     project = project,
                                     panels = project.panels,
                                     recapConfig = project.recapConfig.copy(targetDurationMinutes = targetLengthMin)
                                 )
-                                generatedPackage = pkg
-                                onShowMessage("Generated YouTube Production Package: ${pkg.chapters.size} chapters.")
+                                pkgResult.onSuccess { pkg ->
+                                    generatedPackage = pkg
+                                    onShowMessage("Generated YouTube Production Package: ${pkg.chapters.size} chapters.")
+                                }.onFailure { err ->
+                                    onShowMessage("Error generating recap: ${err.message}")
+                                }
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),

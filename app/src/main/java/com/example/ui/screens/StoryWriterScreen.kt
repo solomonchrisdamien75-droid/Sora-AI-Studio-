@@ -35,6 +35,7 @@ import com.example.data.AiModelEntity
 import com.example.ui.SoraMainViewModel
 import com.example.ui.components.*
 import com.example.ui.theme.*
+import androidx.compose.ui.text.style.TextOverflow
 import kotlinx.coroutines.launch
 
 val StoryStudioFeatures = listOf(
@@ -76,6 +77,7 @@ fun StoryWriterScreen(
     var showEditSheet by remember { mutableStateOf(false) }
     var showContinueDialog by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
+    var showModelRequiredDialog by remember { mutableStateOf(false) }
     var selectedTextToEdit by remember { mutableStateOf("") }
 
     // Feature settings states
@@ -84,6 +86,14 @@ fun StoryWriterScreen(
     var proseStyleSetting by remember { mutableStateOf("Cinematic & Immersive") }
     var continuityStrictness by remember { mutableStateOf("High (Strict Lore Consistency)") }
     var exportFormatSetting by remember { mutableStateOf("EPUB + Markdown Bundle") }
+
+    fun ensureModelLoaded(onReady: () -> Unit) {
+        if (activeModel == null) {
+            showModelRequiredDialog = true
+        } else {
+            onReady()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -98,7 +108,7 @@ fun StoryWriterScreen(
                     IconButton(onClick = { showExportDialog = true }, modifier = Modifier.testTag("story_export_button")) {
                         Icon(Icons.Default.Share, contentDescription = "Export Manuscript", tint = TextPrimary)
                     }
-                    IconButton(onClick = { showContinueDialog = true }, modifier = Modifier.testTag("story_continue_button")) {
+                    IconButton(onClick = { ensureModelLoaded { showContinueDialog = true } }, modifier = Modifier.testTag("story_continue_button")) {
                         Icon(Icons.Default.FastForward, contentDescription = "Continue Story", tint = NeonCyan)
                     }
                 }
@@ -221,9 +231,11 @@ fun StoryWriterScreen(
                         project = storyProject,
                         onUpdate = { storyEngine.updateStoryProject(it) },
                         onGenerate = {
-                            coroutineScope.launch {
-                                storyEngine.generateFullStory(storyProject, activeModel)
-                                selectedFeatureId = "PROSE_READER_EDITOR"
+                            ensureModelLoaded {
+                                coroutineScope.launch {
+                                    storyEngine.generateFullStory(storyProject, activeModel)
+                                    selectedFeatureId = "PROSE_READER_EDITOR"
+                                }
                             }
                         },
                         isGenerating = isGenerating
@@ -232,9 +244,11 @@ fun StoryWriterScreen(
                         project = storyProject,
                         onUpdate = { storyEngine.updateStoryProject(it) },
                         onGenerateChapter = { chIndex ->
-                            coroutineScope.launch {
-                                storyEngine.continueStory(storyProject, chIndex, activeModel)
-                                selectedFeatureId = "PROSE_READER_EDITOR"
+                            ensureModelLoaded {
+                                coroutineScope.launch {
+                                    storyEngine.continueStory(storyProject, chIndex, activeModel)
+                                    selectedFeatureId = "PROSE_READER_EDITOR"
+                                }
                             }
                         }
                     )
@@ -254,9 +268,11 @@ fun StoryWriterScreen(
                         proseStyle = proseStyleSetting,
                         onProseStyleChange = { proseStyleSetting = it },
                         onGenerate = {
-                            coroutineScope.launch {
-                                storyEngine.generateFullStory(storyProject, activeModel)
-                                selectedFeatureId = "PROSE_READER_EDITOR"
+                            ensureModelLoaded {
+                                coroutineScope.launch {
+                                    storyEngine.generateFullStory(storyProject, activeModel)
+                                    selectedFeatureId = "PROSE_READER_EDITOR"
+                                }
                             }
                         }
                     )
@@ -265,8 +281,10 @@ fun StoryWriterScreen(
                         storyEngine = storyEngine,
                         isGenerating = isGenerating,
                         onGenerate = {
-                            coroutineScope.launch {
-                                storyEngine.generateFullStory(storyProject, activeModel)
+                            ensureModelLoaded {
+                                coroutineScope.launch {
+                                    storyEngine.generateFullStory(storyProject, activeModel)
+                                }
                             }
                         },
                         onOpenEdit = { text ->
@@ -274,7 +292,9 @@ fun StoryWriterScreen(
                             showEditSheet = true
                         },
                         onContinue = {
-                            showContinueDialog = true
+                            ensureModelLoaded {
+                                showContinueDialog = true
+                            }
                         }
                     )
                     "INLINE_PROSE_POLISHER" -> StoryInlinePolisherView(
@@ -398,6 +418,68 @@ fun StoryWriterScreen(
         ExportManuscriptModalDialog(
             project = storyProject,
             onDismiss = { showExportDialog = false }
+        )
+    }
+
+    // AI Model in RAM Required Dialog
+    if (showModelRequiredDialog) {
+        AlertDialog(
+            onDismissRequest = { showModelRequiredDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Memory, contentDescription = null, tint = NeonPurple, modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("AI Model in RAM Required", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Story Writer requires neural language model weights loaded into device RAM to perform character consistency, 3-act narrative drafting, and prose generation.",
+                        fontSize = 12.5.sp,
+                        color = TextSecondary
+                    )
+                    Surface(
+                        color = GlassSurfaceVariant,
+                        shape = RoundedCornerShape(8.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, NeonPurple.copy(alpha = 0.4f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Recommended: Sora-Story-Novelist-7B", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = NeonPurple)
+                            Text("Format: LiteRT / GGUF (Q4_K_M Quantized)", fontSize = 11.sp, color = TextPrimary)
+                            Text("RAM Allocated: ~1,850 MB", fontSize = 11.sp, color = NeonCyan)
+                            Text("Capabilities: Long-form Prose, World Lore, Dialogue", fontSize = 10.sp, color = TextSecondary)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showModelRequiredDialog = false
+                        viewModel.quickLoadModelAndStartGeneration()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = NeonPurple),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("⚡ Quick-Load (1.8G)", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = {
+                        showModelRequiredDialog = false
+                        viewModel.selectTab(com.example.ui.SoraTab.MODELS)
+                    },
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("Models Hub", color = NeonCyan)
+                }
+            },
+            containerColor = DeepDarkBg
         )
     }
 }
@@ -907,12 +989,12 @@ fun StoryModelCapabilityHeader(
     viewModel: SoraMainViewModel
 ) {
     Surface(
-        color = GlassSurfaceVariant,
+        color = if (activeModel != null) AccentGreen.copy(alpha = 0.12f) else AccentRed.copy(alpha = 0.12f),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp),
         shape = RoundedCornerShape(10.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, CardBorder)
+        border = androidx.compose.foundation.BorderStroke(1.dp, if (activeModel != null) AccentGreen.copy(alpha = 0.5f) else AccentRed.copy(alpha = 0.6f))
     ) {
         Row(
             modifier = Modifier
@@ -921,34 +1003,62 @@ fun StoryModelCapabilityHeader(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(if (activeModel != null) AccentGreen else WarningOrange)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    imageVector = if (activeModel != null) Icons.Default.Memory else Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = if (activeModel != null) AccentGreen else AccentRed,
+                    modifier = Modifier.size(16.dp)
                 )
                 Spacer(Modifier.width(8.dp))
                 Column {
                     Text(
-                        text = if (activeModel != null) "Active Model: ${activeModel.name}" else "Using Built-in Neural Engine",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = TextPrimary
+                        text = if (activeModel != null) "RAM ALLOCATED: ${activeModel.name}" else "NO MODEL IN RAM (REQUIRED FOR NOVEL GEN)",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (activeModel != null) AccentGreen else AccentRed,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = "Accelerated Neural Context Window (32k tokens)",
+                        text = if (activeModel != null) "${activeModel.ramRequiredMb} MB Allocated • Neural Novelist Ready" else "Tap Quick-Load or visit Models Hub to allocate weights",
                         fontSize = 10.sp,
                         color = TextSecondary
                     )
                 }
             }
 
-            TextButton(
-                onClick = { viewModel.selectTab(com.example.ui.SoraTab.MODELS) },
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-            ) {
-                Text("Switch Model", fontSize = 11.sp, color = NeonCyan)
+            if (activeModel == null) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Button(
+                        onClick = { viewModel.quickLoadModelAndStartGeneration() },
+                        colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text("⚡ Quick-Load", fontSize = 10.sp, color = DeepDarkBg, fontWeight = FontWeight.Bold)
+                    }
+                    OutlinedButton(
+                        onClick = { viewModel.selectTab(com.example.ui.SoraTab.MODELS) },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonPurple),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text("Hub", fontSize = 10.sp)
+                    }
+                }
+            } else {
+                OutlinedButton(
+                    onClick = { viewModel.selectTab(com.example.ui.SoraTab.MODELS) },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AccentGreen),
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                    shape = RoundedCornerShape(6.dp)
+                ) {
+                    Text("Switch", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
             }
         }
     }

@@ -94,7 +94,15 @@ class ScriptEngine(
         _isGenerating.value = true
         _statusMessage.value = null
 
-        val compCheck = inferenceManager.validateCapability(selectedModel, ModelCapability.SCRIPT_WRITING)
+        val activeModel = selectedModel ?: inferenceManager.inferenceEngineManager.activeLoadedModel.value
+        if (activeModel == null) {
+            _isGenerating.value = false
+            val msg = "⚠️ AI Model in RAM Required: No neural network model is loaded in device memory. Please load an AI model in Models Hub before generating AV production scripts."
+            _statusMessage.value = msg
+            return@withContext Result.failure(IllegalStateException(msg))
+        }
+
+        val compCheck = inferenceManager.validateCapability(activeModel, ModelCapability.SCRIPT_WRITING)
         if (!compCheck.isCompatible) {
             _isGenerating.value = false
             val msg = compCheck.errorMessage ?: "Selected model does not support Script Writing."
@@ -108,7 +116,7 @@ class ScriptEngine(
                 jobId = jobId,
                 type = AIJobType.SCRIPT_GENERATION,
                 title = "Script: ${project.title}",
-                modelName = selectedModel?.name ?: "Auto AI Model",
+                modelName = activeModel.name,
                 totalSteps = project.sceneCount + 2,
                 inputDescription = "Format: ${project.videoType}, Duration: ${project.targetDurationSeconds}s, Scenes: ${project.sceneCount}"
             )

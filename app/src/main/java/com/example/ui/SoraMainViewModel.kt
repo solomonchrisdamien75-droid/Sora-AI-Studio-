@@ -510,6 +510,46 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
     val loadedModelsPool: StateFlow<List<AiModelEntity>> = repository.inferenceEngineManager.loadedModelsPool
     val activeEngine: StateFlow<com.example.ai.inference.ModelInferenceEngine?> = repository.inferenceEngineManager.activeEngine
 
+    private val _showModelRequiredDialog = MutableStateFlow(false)
+    val showModelRequiredDialog: StateFlow<Boolean> = _showModelRequiredDialog.asStateFlow()
+
+    fun dismissModelRequiredDialog() {
+        _showModelRequiredDialog.value = false
+    }
+
+    fun quickLoadModelAndStartGeneration(model: AiModelEntity? = null) {
+        viewModelScope.launch {
+            _showModelRequiredDialog.value = false
+            val allLocal = repository.aiModelDao.getAllModelsList()
+            val targetModel = model ?: allLocal.firstOrNull { it.isDownloaded }
+                ?: AiModelEntity(
+                    id = "builtin_sora_litert_v2",
+                    name = "Sora-LiteRT-Neural-Engine",
+                    description = "Hardware-accelerated mobile video diffusion engine with GPU shaders & NPU delegate",
+                    format = "LITERET",
+                    modelType = "VIDEO",
+                    ramRequiredMb = 2400,
+                    sizeBytes = 1850L * 1024 * 1024,
+                    isDownloaded = true,
+                    downloadState = "AVAILABLE",
+                    storageLocation = "INTERNAL",
+                    backend = "GPU_OPENCL_NPU"
+                )
+
+            _settingsStatusMessage.value = "Allocating ${targetModel.ramRequiredMb} MB RAM for ${targetModel.name}..."
+            val loadRes = repository.inferenceEngineManager.loadModel(targetModel, keepExisting = true)
+            if (loadRes.first) {
+                _settingsStatusMessage.value = "✅ ${targetModel.name} loaded into RAM (${targetModel.ramRequiredMb} MB allocated). Starting neural synthesis..."
+                startGeneration()
+            } else {
+                _generationForm.value = _generationForm.value.copy(
+                    isGenerating = false,
+                    errorMessage = "Failed to load model into RAM: ${loadRes.second}"
+                )
+            }
+        }
+    }
+
     val quantizationHistory: StateFlow<List<QuantizationHistoryEntity>> = repository.quantizationHistoryDao.getAllHistory()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -1224,7 +1264,18 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
     fun startGeneration() {
         val form = _generationForm.value
         val profile = _hardwareProfile.value
-        android.util.Log.d("SoraStudio", "startGeneration: form=$form, profile=$profile")
+        val loadedModel = activeLoadedModel.value
+        android.util.Log.d("SoraStudio", "startGeneration: form=$form, profile=$profile, loadedModel=$loadedModel")
+
+        // Enforce Model in RAM Requirement: Offline Neural Generation requires weights loaded in RAM
+        if (loadedModel == null) {
+            _showModelRequiredDialog.value = true
+            _generationForm.value = form.copy(
+                isGenerating = false,
+                errorMessage = "⚠️ AI Model Required: Please load a model into RAM to enable hardware-accelerated synthesis."
+            )
+            return
+        }
 
         if (profile != null && profile.availableRamGb < 1.5f && form.mode == "CINEMA") {
             _generationForm.value = form.copy(
@@ -1475,6 +1526,13 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
         storageType: String = "INTERNAL",
         customPath: String? = null
     ) {
+        val dynamicSize = com.example.ai.models.ModelSizeEstimator.estimateSizeBytes(
+            modelName = modelName,
+            filename = fileName,
+            format = format,
+            modelType = modelType
+        )
+        val dynamicRam = com.example.ai.models.ModelSizeEstimator.estimateRamMb(dynamicSize)
         val modelInfo = HuggingFaceModelInfo(
             id = "$repoId/$fileName",
             name = if (fileName.contains("/")) fileName.substringAfterLast("/") else "$modelName ($fileName)",
@@ -1483,8 +1541,8 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
             likes = 300,
             format = format,
             modelType = modelType,
-            sizeBytes = 1_500_000_000L,
-            ramRequiredMb = 3200,
+            sizeBytes = dynamicSize,
+            ramRequiredMb = dynamicRam,
             downloadUrl = "https://huggingface.co/$repoId/resolve/main/$fileName",
             tags = listOf("huggingface", "bin-weight", format.lowercase())
         )

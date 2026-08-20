@@ -28,6 +28,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -50,6 +51,7 @@ import androidx.compose.ui.layout.ContentScale
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.sin
 
 @Composable
 fun GalleryScreen(viewModel: SoraMainViewModel) {
@@ -164,15 +166,33 @@ fun GalleryCardItem(
             .clickable { onPlayClick() }
             .testTag("gallery_item_${item.id}")
     ) {
-        val isImage = item.mediaType == "IMAGE" || item.filePath.endsWith(".png", true) || item.filePath.endsWith(".jpg", true) || item.filePath.endsWith(".jpeg", true)
         val localFile = File(item.filePath)
+        val previewImageFile = if (item.filePath.endsWith(".mp4", true)) {
+            val pngSibling = File(item.filePath.substringBeforeLast(".") + ".png")
+            if (pngSibling.exists()) pngSibling else localFile
+        } else {
+            localFile
+        }
 
-        if (isImage && localFile.exists()) {
+        if (previewImageFile.exists()) {
             AsyncImage(
-                model = localFile,
-                contentDescription = "Generated Image Thumbnail",
+                model = previewImageFile,
+                contentDescription = "Generated Artwork Thumbnail",
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
+            )
+            // Overlay gradient
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color.Black.copy(alpha = 0.7f)
+                            )
+                        )
+                    )
             )
         } else {
             // Thumbnail simulated background canvas
@@ -439,64 +459,83 @@ fun GalleryVideoPlayerModal(
                         .background(DeepDarkBg)
                         .border(1.dp, NeonCyan.copy(alpha = 0.4f), RoundedCornerShape(14.dp))
                 ) {
-                    val isImage = item.mediaType == "IMAGE" || item.filePath.endsWith(".png", true) || item.filePath.endsWith(".jpg", true) || item.filePath.endsWith(".jpeg", true)
                     val localFile = File(item.filePath)
-
-                    if (isImage && localFile.exists()) {
-                        AsyncImage(
-                            model = localFile,
-                            contentDescription = "Generated Image Preview",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Fit
-                        )
+                    val previewImageFile = if (item.filePath.endsWith(".mp4", true)) {
+                        val pngSibling = File(item.filePath.substringBeforeLast(".") + ".png")
+                        if (pngSibling.exists()) pngSibling else localFile
                     } else {
-                        // Video Rendering Canvas with dynamic frame visualizer
-                        Canvas(modifier = Modifier.fillMaxSize()) {
-                        val playProgress = (currentPlayheadMs.toFloat() / totalDurationMs.toFloat()).coerceIn(0f, 1f)
-                        val dynamicHue = (baseHue + playProgress * 60f) % 360f
-
-                        // Dynamic multi-layer gradient background
-                        val grad = Brush.radialGradient(
-                            colors = listOf(
-                                Color.hsl(dynamicHue, 0.75f, 0.28f),
-                                Color.hsl((dynamicHue + 40f) % 360f, 0.6f, 0.12f),
-                                DeepDarkBg
-                            ),
-                            center = Offset(size.width * (0.3f + 0.4f * playProgress), size.height * 0.5f),
-                            radius = size.width * 0.8f
-                        )
-                        drawRect(brush = grad)
-
-                        // Film grain / Scanline sweep
-                        val scanY = size.height * scanPhase
-                        drawLine(
-                            color = NeonCyan.copy(alpha = 0.25f),
-                            start = Offset(0f, scanY),
-                            end = Offset(size.width, scanY),
-                            strokeWidth = 2f
-                        )
-
-                        // Center focal graphic: Playhead visualization ring
-                        val centerX = size.width / 2f
-                        val centerY = size.height / 2f
-                        val radius = 38.dp.toPx()
-
-                        drawCircle(
-                            color = NeonCyan.copy(alpha = 0.15f),
-                            radius = radius,
-                            center = Offset(centerX, centerY)
-                        )
-
-                        drawArc(
-                            color = NeonCyan,
-                            startAngle = -90f,
-                            sweepAngle = playProgress * 360f,
-                            useCenter = false,
-                            topLeft = Offset(centerX - radius, centerY - radius),
-                            size = androidx.compose.ui.geometry.Size(radius * 2, radius * 2),
-                            style = Stroke(width = 3.dp.toPx())
-                        )
+                        localFile
                     }
+
+                    val playProgress = (currentPlayheadMs.toFloat() / totalDurationMs.toFloat()).coerceIn(0f, 1f)
+
+                    if (previewImageFile.exists()) {
+                        // Display actual prompt visual scene with Ken Burns motion & playhead progress
+                        val scale = 1.0f + (sin(playProgress * Math.PI.toFloat()) * 0.08f)
+                        val offsetX = (playProgress - 0.5f) * 20f
+
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            AsyncImage(
+                                model = previewImageFile,
+                                contentDescription = "Generated Video Scene",
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer {
+                                        scaleX = scale
+                                        scaleY = scale
+                                        translationX = offsetX
+                                    },
+                                contentScale = ContentScale.Crop
+                            )
+                            // Cinematic lighting overlay
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        Brush.verticalGradient(
+                                            colors = listOf(
+                                                Color.Black.copy(alpha = 0.35f),
+                                                Color.Transparent,
+                                                Color.Black.copy(alpha = 0.65f)
+                                            )
+                                        )
+                                    )
+                            )
+                            // Animated scanline
+                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                val scanY = size.height * scanPhase
+                                drawLine(
+                                    color = Color.White.copy(alpha = 0.2f),
+                                    start = Offset(0f, scanY),
+                                    end = Offset(size.width, scanY),
+                                    strokeWidth = 2f
+                                )
+                            }
+                        }
+                    } else {
+                        // Fallback canvas
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val dynamicHue = (baseHue + playProgress * 60f) % 360f
+
+                            val grad = Brush.radialGradient(
+                                colors = listOf(
+                                    Color.hsl(dynamicHue, 0.75f, 0.28f),
+                                    Color.hsl((dynamicHue + 40f) % 360f, 0.6f, 0.12f),
+                                    DeepDarkBg
+                                ),
+                                center = Offset(size.width * (0.3f + 0.4f * playProgress), size.height * 0.5f),
+                                radius = size.width * 0.8f
+                            )
+                            drawRect(brush = grad)
+
+                            val scanY = size.height * scanPhase
+                            drawLine(
+                                color = NeonCyan.copy(alpha = 0.25f),
+                                start = Offset(0f, scanY),
+                                end = Offset(size.width, scanY),
+                                strokeWidth = 2f
+                            )
+                        }
                     }
 
                     // Floating Watermark & Status Tag

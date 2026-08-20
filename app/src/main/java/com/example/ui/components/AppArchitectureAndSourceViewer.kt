@@ -65,6 +65,9 @@ com.example/
 │   │   └── RealMediaSynthesisEngine.kt // ISO/IEC 14496 MP4/WAV Media Packager & Frame Serializer
 │   ├── hardware/                        // Dynamic Hardware Profiler (Snapdragon NPU, Adreno GPU, RAM Monitor)
 │   ├── inference/                       // On-Device Inference Orchestrator & Execution Dispatcher
+│   ├── llm/                             // PrivateLM: Llama.cpp Vulkan Offload Engine (GGUF)
+│   ├── diffusion/                       // Local Dream: Snapdragon QNN / MNN CPU Stable Diffusion Engine
+│   ├── automation/                      // Private-Agent: Android Accessibility Service Screen Parsing & Tap Simulator
 │   ├── jobs/                            // Background Task Engine & WorkManager Scheduling Handlers
 │   ├── logging/                         // Real-time System Telemetry & Diagnostics Circular Log Buffer
 │   ├── models/                          // GGUF, SafeTensors, LoRA & ONNX Weight Registry
@@ -279,6 +282,10 @@ com.example/
 
 [13] ASSISTANT & TOOL ENGINE (AssistantScreen.kt)
 - Multi-turn Conversational AI Assistant with Persona Presets
+- Private-Agent Automation: Real-time Android UI node parsing & coordinate tap simulator
+- PrivateLM Engine: Local GGUF LLM inference with Vulkan GPU offload and cloud fallback
+- Local Dream: Snapdragon QNN & MNN CPU Stable Diffusion engine with Real-ESRGAN
+- Telegram Bot Integration: Remote automation polling and control webhook
 - Real-time Audio Waveform Speech Interface & Voice Output
 - Function Calling Tools: Media generation, system queries, memory recall
 - Terminal Execution & Diagnostics Logging console
@@ -336,6 +343,9 @@ com.example/
 - Lifecycle ViewModel Compose: 2.8.7
 - Coil Compose: 2.7.0 (Asynchronous Image Loading)
 - Serialization: KotlinX Serialization JSON 1.7.3
+- Qualcomm QNN SDK & Alibaba MNN: Hardware-accelerated inference (Local Dream)
+- Llama.cpp Android: GGUF execution with Vulkan GPU support (PrivateLM)
+- Accessibility Services & Android Intent: System UI parsing (Private-Agent)
 ================================================================================
 """
 }

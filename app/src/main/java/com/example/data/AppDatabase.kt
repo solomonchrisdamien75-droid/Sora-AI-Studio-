@@ -28,9 +28,10 @@ import com.example.data.local.daos.GenerationTaskDao
         ModelCapabilityEntity::class,
         LocalModelEntity::class,
         LocalModelCapabilityEntity::class,
-        GenerationTaskEntity::class
+        GenerationTaskEntity::class,
+        ManhwaProjectEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -42,6 +43,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun quantizationHistoryDao(): QuantizationHistoryDao
     abstract fun storyProjectDao(): StoryProjectDao
     abstract fun scriptProjectDao(): ScriptProjectDao
+    abstract fun manhwaProjectDao(): ManhwaProjectDao
     abstract fun generationLogDao(): GenerationLogDao
     abstract fun localModelMetadataDao(): LocalModelMetadataDao
     abstract fun modelDao(): ModelDao

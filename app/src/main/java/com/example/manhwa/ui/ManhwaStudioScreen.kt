@@ -43,7 +43,8 @@ val ManhwaStudioFeatureItems = listOf(
     StudioFeatureItem("RECAP_STORY", 9, "AI Story Recap & Narrated Summary", "Scripted narrative recap summary generator & hype trailer", "RECAP", Icons.Default.MenuBook, "Recap"),
     StudioFeatureItem("PREVIEW_EXPORT", 10, "Live Canvas Preview & Quality Control", "Real-time 60fps webtoon video preview & inspector", "PREVIEW", Icons.Default.Movie, "Preview"),
     StudioFeatureItem("MODELS_FUSION", 11, "Model Fusion & Neural Engine Lab", "Quantized visual+audio models & hardware NPU engine", "FUSION", Icons.Default.Hub, "Engine"),
-    StudioFeatureItem("EXPORT_PRESETS", 12, "Video & Webtoon Multi-Format Exporter", "4K 60fps, 9:16 Shorts/Reels/TikTok & GIF animations", "EXPORT", Icons.Default.Share, "Export")
+    StudioFeatureItem("EXPORT_PRESETS", 12, "Video & Webtoon Multi-Format Exporter", "4K 60fps, 9:16 Shorts/Reels/TikTok & GIF animations", "EXPORT", Icons.Default.Share, "Export"),
+    StudioFeatureItem("CUSTOM_SCENE_GEN", 13, "Custom Scene Video Generator", "Storyline scene builder, custom scene count, image prompts, voiceovers & transition prompts", "CUSTOM", Icons.Default.AutoFixHigh, "Custom")
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -52,7 +53,7 @@ fun ManhwaStudioScreen(viewModel: SoraMainViewModel) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    val pipeline = remember { ManhwaStudioPipeline(context) }
+    val pipeline = remember { ManhwaStudioPipeline(context, viewModel.aiInferenceManager) }
     var currentProject by remember { mutableStateOf(pipeline.projectManager.createDefaultProject()) }
     var selectedFeatureId by remember { mutableStateOf("DASHBOARD") }
     val currentFeature = ManhwaStudioFeatureItems.firstOrNull { it.id == selectedFeatureId } ?: ManhwaStudioFeatureItems.first()
@@ -60,10 +61,32 @@ fun ManhwaStudioScreen(viewModel: SoraMainViewModel) {
 
     val activeTask by pipeline.currentTask.collectAsStateWithLifecycle()
     val modelConfig by pipeline.modelConfig.collectAsStateWithLifecycle()
+    val activeLoadedModel by viewModel.activeLoadedModel.collectAsStateWithLifecycle()
 
     var showLegalDisclaimer by remember { mutableStateOf(false) }
     var showNewProjectDialog by remember { mutableStateOf(false) }
+    var showModelRequiredDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
+
+    fun startRecapPipeline() {
+        if (activeLoadedModel == null) {
+            showModelRequiredDialog = true
+            return
+        }
+        coroutineScope.launch {
+            snackbarHostState.showSnackbar("Starting AI Manhwa Recap Production Pipeline with ${activeLoadedModel?.name}...")
+            try {
+                pipeline.runFullRecapPipeline(
+                    project = currentProject,
+                    imageUris = emptyList(),
+                    audioUri = null,
+                    recapConfig = currentProject.recapConfig
+                ) { updated -> currentProject = updated }
+            } catch (e: Exception) {
+                snackbarHostState.showSnackbar("Recap pipeline notice: ${e.message}")
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -81,17 +104,7 @@ fun ManhwaStudioScreen(viewModel: SoraMainViewModel) {
                         Icon(Icons.Default.AddCircleOutline, contentDescription = "New Project", tint = NeonCyan)
                     }
                     Button(
-                        onClick = {
-                            coroutineScope.launch {
-                                snackbarHostState.showSnackbar("Starting AI Manhwa Recap Production Pipeline...")
-                                pipeline.runFullRecapPipeline(
-                                    project = currentProject,
-                                    imageUris = emptyList(),
-                                    audioUri = null,
-                                    recapConfig = currentProject.recapConfig
-                                ) { updated -> currentProject = updated }
-                            }
-                        },
+                        onClick = { startRecapPipeline() },
                         colors = ButtonDefaults.buttonColors(containerColor = ElectricPink),
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                         shape = RoundedCornerShape(8.dp),
@@ -134,6 +147,85 @@ fun ManhwaStudioScreen(viewModel: SoraMainViewModel) {
                         color = TextPrimary
                     )
                     SoraBadge(text = "12 FEATURES ACTIVE", color = ElectricPink)
+                }
+            }
+
+            // RAM Neural Model Allocation Status Bar
+            Surface(
+                color = if (activeLoadedModel != null) AccentGreen.copy(alpha = 0.12f) else AccentRed.copy(alpha = 0.12f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 2.dp),
+                shape = RoundedCornerShape(8.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, if (activeLoadedModel != null) AccentGreen.copy(alpha = 0.5f) else AccentRed.copy(alpha = 0.6f))
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = if (activeLoadedModel != null) Icons.Default.Memory else Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = if (activeLoadedModel != null) AccentGreen else AccentRed,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Column {
+                            Text(
+                                text = if (activeLoadedModel != null) "RAM ALLOCATED: ${activeLoadedModel?.name}" else "NO MODEL IN RAM (REQUIRED FOR RECAP)",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (activeLoadedModel != null) AccentGreen else AccentRed,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = if (activeLoadedModel != null) "${activeLoadedModel?.ramRequiredMb} MB Allocated • Neural Recap Engine Ready" else "Tap Quick-Load or visit Models Hub to allocate RAM",
+                                fontSize = 9.5.sp,
+                                color = TextSecondary
+                            )
+                        }
+                    }
+
+                    if (activeLoadedModel == null) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Button(
+                                onClick = {
+                                    viewModel.quickLoadModelAndStartGeneration()
+                                    coroutineScope.launch {
+                                        snackbarHostState.showSnackbar("Allocating 1.8GB RAM for Manhwa Neural Engine...")
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text("⚡ Quick-Load", fontSize = 10.sp, color = DeepDarkBg, fontWeight = FontWeight.Bold)
+                            }
+                            OutlinedButton(
+                                onClick = { viewModel.selectTab(com.example.ui.SoraTab.MODELS) },
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonPurple),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text("Hub", fontSize = 10.sp)
+                            }
+                        }
+                    } else {
+                        OutlinedButton(
+                            onClick = { viewModel.selectTab(com.example.ui.SoraTab.MODELS) },
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = AccentGreen),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text("Switch", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
 
@@ -268,6 +360,11 @@ fun ManhwaStudioScreen(viewModel: SoraMainViewModel) {
                             coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
                         }
                     )
+                    "CUSTOM_SCENE_GEN" -> CustomSceneGeneratorView(
+                        viewModel = viewModel,
+                        project = currentProject,
+                        onProjectUpdated = { currentProject = it }
+                    )
                 }
             }
         }
@@ -369,6 +466,72 @@ fun ManhwaStudioScreen(viewModel: SoraMainViewModel) {
             dismissButton = {
                 TextButton(onClick = { showNewProjectDialog = false }) {
                     Text("Cancel", color = TextSecondary)
+                }
+            },
+            containerColor = DeepDarkBg
+        )
+    }
+
+    // Model in RAM Required Dialog
+    if (showModelRequiredDialog) {
+        AlertDialog(
+            onDismissRequest = { showModelRequiredDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Memory, contentDescription = null, tint = ElectricPink, modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("AI Model in RAM Required", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Manhwa Recap production requires local neural network weights loaded into device RAM to perform OCR panel understanding, character consistency tracking, and scriptwriting.",
+                        fontSize = 12.5.sp,
+                        color = TextSecondary
+                    )
+                    Surface(
+                        color = GlassSurfaceVariant,
+                        shape = RoundedCornerShape(8.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, ElectricPink.copy(alpha = 0.4f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Recommended: Manhwa-Recap-Vision-Engine", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = ElectricPink)
+                            Text("Format: LiteRT / GGUF (Quantized Q4_K_M)", fontSize = 11.sp, color = TextPrimary)
+                            Text("Memory Required: ~1,850 MB VRAM / RAM", fontSize = 11.sp, color = NeonCyan)
+                            Text("Hardware: On-device NPU + OpenCL Acceleration", fontSize = 10.sp, color = TextSecondary)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showModelRequiredDialog = false
+                        viewModel.quickLoadModelAndStartGeneration()
+                        coroutineScope.launch {
+                            snackbarHostState.showSnackbar("Allocating 1.8GB RAM for Manhwa Neural Engine...")
+                            startRecapPipeline()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = ElectricPink),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("⚡ Quick-Load & Start Recap", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = {
+                        showModelRequiredDialog = false
+                        viewModel.selectTab(com.example.ui.SoraTab.MODELS)
+                    },
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("Browse Models Hub", color = NeonCyan)
                 }
             },
             containerColor = DeepDarkBg

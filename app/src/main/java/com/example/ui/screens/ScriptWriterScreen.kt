@@ -32,6 +32,7 @@ import com.example.ai.script.ScriptScene
 import com.example.ui.SoraMainViewModel
 import com.example.ui.components.*
 import com.example.ui.theme.*
+import androidx.compose.ui.text.style.TextOverflow
 import kotlinx.coroutines.launch
 
 val ScriptStudioFeatures = listOf(
@@ -69,11 +70,20 @@ fun ScriptWriterScreen(
     var selectedFeatureId by remember { mutableStateOf("AV_SCRIPT_MATRIX") }
     val currentFeature = ScriptStudioFeatures.firstOrNull { it.id == selectedFeatureId } ?: ScriptStudioFeatures.first()
     var showExportDialog by remember { mutableStateOf(false) }
+    var showModelRequiredDialog by remember { mutableStateOf(false) }
 
     // Feature settings states
     var dialogueWpmSetting by remember { mutableIntStateOf(145) }
     var lightingMoodSetting by remember { mutableStateOf("High-Contrast Cyberpunk Neon") }
     var exportFormatSetting by remember { mutableStateOf("Final Draft XML (.fdx)") }
+
+    fun ensureModelLoaded(onReady: () -> Unit) {
+        if (activeModel == null) {
+            showModelRequiredDialog = true
+        } else {
+            onReady()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -205,8 +215,10 @@ fun ScriptWriterScreen(
                         project = scriptProject,
                         isGenerating = isGenerating,
                         onGenerate = {
-                            coroutineScope.launch {
-                                scriptEngine.generateFullScript(scriptProject, activeModel)
+                            ensureModelLoaded {
+                                coroutineScope.launch {
+                                    scriptEngine.generateFullScript(scriptProject, activeModel)
+                                }
                             }
                         },
                         onSendToVideo = {
@@ -215,8 +227,10 @@ fun ScriptWriterScreen(
                             }
                         },
                         onGenerateVoiceover = {
-                            coroutineScope.launch {
-                                scriptEngine.generateVoiceoverForScript(scriptProject)
+                            ensureModelLoaded {
+                                coroutineScope.launch {
+                                    scriptEngine.generateVoiceoverForScript(scriptProject)
+                                }
                             }
                         }
                     )
@@ -226,9 +240,11 @@ fun ScriptWriterScreen(
                         project = scriptProject,
                         isGenerating = isGenerating,
                         onGenerate = {
-                            coroutineScope.launch {
-                                scriptEngine.generateFullScript(scriptProject, activeModel)
-                                selectedFeatureId = "AV_SCRIPT_MATRIX"
+                            ensureModelLoaded {
+                                coroutineScope.launch {
+                                    scriptEngine.generateFullScript(scriptProject, activeModel)
+                                    selectedFeatureId = "AV_SCRIPT_MATRIX"
+                                }
                             }
                         }
                     )
@@ -240,8 +256,10 @@ fun ScriptWriterScreen(
                         wpm = dialogueWpmSetting,
                         onWpmChange = { dialogueWpmSetting = it },
                         onSynthesizeVo = {
-                            coroutineScope.launch {
-                                scriptEngine.generateVoiceoverForScript(scriptProject)
+                            ensureModelLoaded {
+                                coroutineScope.launch {
+                                    scriptEngine.generateVoiceoverForScript(scriptProject)
+                                }
                             }
                         }
                     )
@@ -279,6 +297,68 @@ fun ScriptWriterScreen(
             project = scriptProject,
             storageManager = viewModel.projectStorageManager,
             onDismiss = { showExportDialog = false }
+        )
+    }
+
+    // AI Model in RAM Required Dialog
+    if (showModelRequiredDialog) {
+        AlertDialog(
+            onDismissRequest = { showModelRequiredDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Memory, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("AI Model in RAM Required", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Script Writer requires neural language model weights loaded into device RAM to generate 2-column AV production scripts, sluglines, and voiceover timing.",
+                        fontSize = 12.5.sp,
+                        color = TextSecondary
+                    )
+                    Surface(
+                        color = GlassSurfaceVariant,
+                        shape = RoundedCornerShape(8.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, NeonCyan.copy(alpha = 0.4f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Recommended: Sora-Script-Director-7B", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = NeonCyan)
+                            Text("Format: LiteRT / GGUF (Q4_K_M Quantized)", fontSize = 11.sp, color = TextPrimary)
+                            Text("RAM Allocated: ~1,850 MB", fontSize = 11.sp, color = NeonCyan)
+                            Text("Capabilities: AV Script Matrix, Storyboard Directing, Dialogue Timing", fontSize = 10.sp, color = TextSecondary)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showModelRequiredDialog = false
+                        viewModel.quickLoadModelAndStartGeneration()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(Icons.Default.Bolt, contentDescription = null, tint = DeepDarkBg, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("⚡ Quick-Load (1.8G)", color = DeepDarkBg, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = {
+                        showModelRequiredDialog = false
+                        viewModel.selectTab(com.example.ui.SoraTab.MODELS)
+                    },
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("Models Hub", color = NeonCyan)
+                }
+            },
+            containerColor = DeepDarkBg
         )
     }
 }
@@ -679,12 +759,12 @@ fun ScriptModelCapabilityHeader(
     viewModel: SoraMainViewModel
 ) {
     Surface(
-        color = GlassSurfaceVariant,
+        color = if (activeModel != null) AccentGreen.copy(alpha = 0.12f) else AccentRed.copy(alpha = 0.12f),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp),
         shape = RoundedCornerShape(10.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, CardBorder)
+        border = androidx.compose.foundation.BorderStroke(1.dp, if (activeModel != null) AccentGreen.copy(alpha = 0.5f) else AccentRed.copy(alpha = 0.6f))
     ) {
         Row(
             modifier = Modifier
@@ -693,34 +773,62 @@ fun ScriptModelCapabilityHeader(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(if (activeModel != null) AccentGreen else WarningOrange)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    imageVector = if (activeModel != null) Icons.Default.Memory else Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = if (activeModel != null) AccentGreen else AccentRed,
+                    modifier = Modifier.size(16.dp)
                 )
                 Spacer(Modifier.width(8.dp))
                 Column {
                     Text(
-                        text = if (activeModel != null) "Active Model: ${activeModel.name}" else "Using Built-in Neural Script Engine",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = TextPrimary
+                        text = if (activeModel != null) "RAM ALLOCATED: ${activeModel.name}" else "NO MODEL IN RAM (REQUIRED FOR SCRIPTING)",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (activeModel != null) AccentGreen else AccentRed,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = "AV Matrix & Scene Structuring Engine",
+                        text = if (activeModel != null) "${activeModel.ramRequiredMb} MB Allocated • AV Directing Engine Ready" else "Tap Quick-Load or visit Models Hub to allocate weights",
                         fontSize = 10.sp,
                         color = TextSecondary
                     )
                 }
             }
 
-            TextButton(
-                onClick = { viewModel.selectTab(com.example.ui.SoraTab.MODELS) },
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-            ) {
-                Text("Switch Model", fontSize = 11.sp, color = NeonCyan)
+            if (activeModel == null) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Button(
+                        onClick = { viewModel.quickLoadModelAndStartGeneration() },
+                        colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text("⚡ Quick-Load", fontSize = 10.sp, color = DeepDarkBg, fontWeight = FontWeight.Bold)
+                    }
+                    OutlinedButton(
+                        onClick = { viewModel.selectTab(com.example.ui.SoraTab.MODELS) },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = NeonCyan),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text("Hub", fontSize = 10.sp)
+                    }
+                }
+            } else {
+                OutlinedButton(
+                    onClick = { viewModel.selectTab(com.example.ui.SoraTab.MODELS) },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AccentGreen),
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                    shape = RoundedCornerShape(6.dp)
+                ) {
+                    Text("Switch", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
             }
         }
     }

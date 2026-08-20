@@ -140,8 +140,16 @@ class StoryEngine(
         _isGenerating.value = true
         _statusMessage.value = null
 
+        val activeModel = selectedModel ?: inferenceManager.inferenceEngineManager.activeLoadedModel.value
+        if (activeModel == null) {
+            _isGenerating.value = false
+            val msg = "⚠️ AI Model in RAM Required: No neural network model is loaded in device memory. Please load an AI model in Models Hub before generating story manuscripts."
+            _statusMessage.value = msg
+            return@withContext Result.failure(IllegalStateException(msg))
+        }
+
         // 1. Capability Validation
-        val compCheck = inferenceManager.validateCapability(selectedModel, ModelCapability.STORY_WRITING)
+        val compCheck = inferenceManager.validateCapability(activeModel, ModelCapability.STORY_WRITING)
         if (!compCheck.isCompatible) {
             _isGenerating.value = false
             val msg = compCheck.errorMessage ?: "Selected model does not support Story Writing."
@@ -155,7 +163,7 @@ class StoryEngine(
                 jobId = jobId,
                 type = AIJobType.STORY_GENERATION,
                 title = "Story: ${project.title}",
-                modelName = selectedModel?.name ?: "Auto AI Model",
+                modelName = activeModel.name,
                 totalSteps = project.chapterCount + 2,
                 inputDescription = "Genre: ${project.genre}, Chapters: ${project.chapterCount}, Style: ${project.writingStyle}"
             )
@@ -306,6 +314,16 @@ class StoryEngine(
         selectedModel: AiModelEntity? = null
     ): Result<StoryProject> = withContext(Dispatchers.IO) {
         _isGenerating.value = true
+        _statusMessage.value = null
+
+        val activeModel = selectedModel ?: inferenceManager.inferenceEngineManager.activeLoadedModel.value
+        if (activeModel == null) {
+            _isGenerating.value = false
+            val msg = "⚠️ AI Model in RAM Required: No neural model loaded in device memory. Please load an AI model in Models Hub before continuing stories."
+            _statusMessage.value = msg
+            return@withContext Result.failure(IllegalStateException(msg))
+        }
+
         val nextChapterIndex = project.chapters.size + 1
         _generationPhase.value = "Continuing Story: Writing Chapter $nextChapterIndex"
 

@@ -1,6 +1,8 @@
 package com.example.manhwa.data
 
 import android.content.Context
+import com.example.data.AppDatabase
+import com.example.data.ManhwaProjectEntity
 import com.example.manhwa.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -13,6 +15,8 @@ import java.io.File
  * Storage Access Framework file imports, and checkpoint save/resume.
  */
 class ManhwaProjectManager(private val context: Context) {
+
+    private val manhwaProjectDao = AppDatabase.getDatabase(context).manhwaProjectDao()
 
     private val baseProjectsDir: File by lazy {
         File(context.filesDir, "manhwa_projects").apply { if (!exists()) mkdirs() }
@@ -30,7 +34,7 @@ class ManhwaProjectManager(private val context: Context) {
     }
 
     /**
-     * Saves project.json state for checkpoint resume.
+     * Saves project.json state for checkpoint resume, and updates Room database.
      */
     suspend fun saveProjectState(project: ManhwaProject) = withContext(Dispatchers.IO) {
         val projDir = createProjectDirectory(project.id)
@@ -74,7 +78,24 @@ class ManhwaProjectManager(private val context: Context) {
             })
         }
 
-        metaFile.writeText(json.toString(2))
+        val jsonString = json.toString(2)
+        metaFile.writeText(jsonString)
+
+        val entity = ManhwaProjectEntity(
+            id = project.id,
+            title = project.title,
+            episodeTitle = project.episodeTitle,
+            description = project.description,
+            createdAt = project.createdAt,
+            updatedAt = System.currentTimeMillis(),
+            thumbnailUri = project.thumbnailUri,
+            projectDir = projDir.absolutePath,
+            status = project.status.name,
+            totalPanels = project.panels.size,
+            totalScenes = project.scenes.size,
+            manhwaProjectJson = jsonString
+        )
+        manhwaProjectDao.insertManhwaProject(entity)
     }
 
     /**

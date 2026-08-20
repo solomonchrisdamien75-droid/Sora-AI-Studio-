@@ -437,6 +437,14 @@ fun DownloadsScreen(viewModel: SoraMainViewModel) {
                                             onClick = {
                                                 val fmt = if (sibling.rfilename.endsWith(".gguf")) "GGUF" else if (sibling.rfilename.endsWith(".safetensors")) "SAFETENSORS" else if (sibling.rfilename.endsWith(".onnx")) "ONNX" else "BIN"
                                                 val modelType = if (sibling.rfilename.contains("video", true)) "VIDEO" else "IMAGE"
+                                                val dynamicSize = com.example.ai.models.ModelSizeEstimator.estimateSizeBytes(
+                                                    modelName = inspectedModelName,
+                                                    filename = sibling.rfilename,
+                                                    format = fmt,
+                                                    modelType = modelType,
+                                                    actualSize = sibling.size ?: sibling.lfs?.size
+                                                )
+                                                val dynamicRam = com.example.ai.models.ModelSizeEstimator.estimateRamMb(dynamicSize)
                                                 val modelInfo = HuggingFaceModelInfo(
                                                     id = "$inspectedRepoId/${sibling.rfilename}",
                                                     name = if (sibling.rfilename.contains("/")) sibling.rfilename.substringAfterLast("/") else "$inspectedModelName (${sibling.rfilename})",
@@ -445,8 +453,8 @@ fun DownloadsScreen(viewModel: SoraMainViewModel) {
                                                     likes = 300,
                                                     format = fmt,
                                                     modelType = modelType,
-                                                    sizeBytes = sibling.size ?: sibling.lfs?.size ?: 1_500_000_000L,
-                                                    ramRequiredMb = 3200,
+                                                    sizeBytes = dynamicSize,
+                                                    ramRequiredMb = dynamicRam,
                                                     downloadUrl = "https://huggingface.co/$inspectedRepoId/resolve/main/${sibling.rfilename}",
                                                     tags = listOf("huggingface", "bin-weight", fmt.lowercase())
                                                 )
