@@ -43,12 +43,17 @@ object AppArchitectureContent {
     const val FULL_SOURCE_BLUEPRINT = """================================================================================
           SORA AI CREATIVE STUDIO & PRIVATE AGENT - FULL ARCHITECTURE SPECIFICATION
 ================================================================================
-Version: 3.5.0-PRO (Production On-Device AI Suite)
-Target Runtime: Android 14+ (API Level 34+), Jetpack Compose (M3), Kotlin Coroutines & Flow
+Version: 1.0 (Current Android application implementation)
+Target Runtime: Android API 24+, compileSdk 36.1, Jetpack Compose Material 3, Kotlin 2.2.10
 Local Persistence: SQLite / Room Database (KSP) with Multi-Table Entity Relations
-Inference Framework: On-Device Snapdragon NPU / Adreno Vulkan / CPU Vectorized Inference (LiteRT/Llama.cpp/ONNX) + Remote GPU Node
+Inference Framework: Local model adapters for Llama.cpp, LiteRT, and ONNX Runtime; cloud access is separate and explicit
 Audio Pipeline: Low-latency AudioTrack PCM16 Synthesizer + Spatial 3D Binaural DSP
 Video Pipeline: RealMediaSynthesisEngine with 1s to 24+ Hours Multi-Segment Chaining (Real-Time Hardware-Accelerated Inference)
+
+Current implementation status: Model-backed operations require a compatible active local model. When none is loaded,
+the application reports NO LOCAL MODEL LOADED instead of returning generated placeholder content. Model discovery,
+validation, registration, loading, unloading, downloads, queueing, and local API serving are implemented in the
+packages listed below. Device-specific native runtimes and model weights are supplied separately by the user.
 
 ================================================================================
 1. COMPLETE REPOSITORY & PACKAGE ARCHITECTURE
@@ -334,15 +339,16 @@ com.example/
 ================================================================================
 4. DEPENDENCIES & BUILD SPECIFICATIONS
 ================================================================================
-- Kotlin: 2.0.21
-- Jetpack Compose: BOM 2024.10.01 (Material 3, Foundation, Animation)
-- Android Gradle Plugin: 8.7.2
-- Room Database: 2.6.1 (Room KTX, KSP Annotation Processor)
-- Coroutines: 1.9.0 (Core, Android)
-- Navigation Compose: 2.8.3
+- Kotlin: 2.2.10
+- Jetpack Compose: BOM 2024.09.00 (Material 3, Foundation, Animation)
+- Android Gradle Plugin: 9.1.1
+- Gradle: 9.3.1 in GitHub Actions; repository wrapper is not used by the workflow
+- Room Database: 2.7.0 (Room KTX, KSP Annotation Processor)
+- Coroutines: 1.10.2 (Core, Android)
+- Navigation Compose: 2.8.9
 - Lifecycle ViewModel Compose: 2.8.7
 - Coil Compose: 2.7.0 (Asynchronous Image Loading)
-- Serialization: KotlinX Serialization JSON 1.7.3
+- Serialization: Moshi 1.15.2 and Retrofit 2.12.0
 - Qualcomm QNN SDK & Alibaba MNN: Hardware-accelerated inference (Local Dream)
 - Llama.cpp Android: GGUF execution with Vulkan GPU support (PrivateLM)
 - Accessibility Services & Android Intent: System UI parsing (Private-Agent)

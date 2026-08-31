@@ -61,15 +61,27 @@ jobs:
               -keypass android \
               -dname "CN=Android Debug,O=Android,C=US"
             
-            if [ -f "./debug.keystore" ]; then
-              echo "Temporary debug keystore generated successfully."
-            else
-              echo "Error: Failed to create ./debug.keystore"
-              exit 1
-            fi
           else
             echo "debug.keystore already exists. Reusing existing debug keystore."
           fi
+
+          if [ ! -f "./debug.keystore" ]; then
+            echo "Error: Failed to create ./debug.keystore"
+            exit 1
+          fi
+          echo "Temporary debug keystore is ready for this runner."
+
+      - name: Configure CI Gradle memory
+        run: |
+          if [ ! -f "gradle.properties" ]; then
+            echo "Error: gradle.properties is missing."
+            exit 1
+          fi
+          sed -i 's/^org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx6g -Xms512m -Dfile.encoding=UTF-8/' gradle.properties
+          grep -q '^org.gradle.jvmargs=-Xmx6g ' gradle.properties || {
+            echo "Error: Failed to configure Gradle heap for CI."
+            exit 1
+          }
 
       - name: Build Debug APK
         run: |
