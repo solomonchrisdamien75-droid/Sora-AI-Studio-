@@ -1226,7 +1226,7 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
                 
                 if (activeModel == null) {
                     _chatMessages.value = _chatMessages.value.map { msg ->
-                        if (msg.id == aiMsgId) msg.copy(text = "Error: No downloaded model available. Please download a TEXT model first to pull inference into RAM.") else msg
+                        if (msg.id == aiMsgId) msg.copy(text = "NO LOCAL MODEL LOADED. Import a compatible GGUF, LiteRT, ONNX, or SafeTensors model, then load it in the Models screen before chat inference.") else msg
                     }
                     _isChatStreaming.value = false
                     _isAssistantLoading.value = false
@@ -1249,9 +1249,9 @@ class SoraMainViewModel(application: Application) : AndroidViewModel(application
                 }
             } catch (e: Exception) {
                 if (accumulatedText.isEmpty()) {
-                    val fallback = "🤖 [${repository.inferenceEngineManager.activeLoadedModel.value?.name ?: "Sora AI Engine"}]: I received your message: \"$userText\".\n\nI can assist you with creative video synthesis, story arcs, AV script breakdowns, neural voice synthesis, and multimedia generation."
+                    val message = e.message ?: "NO LOCAL MODEL LOADED. Load a compatible model before using chat inference."
                     _chatMessages.value = _chatMessages.value.map { msg ->
-                        if (msg.id == aiMsgId) msg.copy(text = fallback) else msg
+                        if (msg.id == aiMsgId) msg.copy(text = message) else msg
                     }
                 }
             } finally {

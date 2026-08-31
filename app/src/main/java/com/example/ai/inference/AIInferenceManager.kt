@@ -5,17 +5,15 @@ import com.example.ai.hardware.HardwareDetector
 import com.example.ai.inference.model.ModelCapability
 import com.example.ai.inference.model.ModelCapabilityDetector
 import com.example.ai.inference.model.ModelCompatibilityResult
+import com.example.ai.local.LocalAIOrchestrator
 import com.example.ai.models.ModelRegistry
 import com.example.data.AiModelEntity
 import com.example.data.SoraCloudServerEntity
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
-import java.io.File
-import kotlin.math.abs
 
 /**
  * AIInferenceRequest encapsulating user prompts, parameters, system instructions, and target capabilities.
@@ -56,6 +54,7 @@ class AIInferenceManager(
 ) {
     val hardwareDetector = HardwareDetector(context)
     val modelRegistry = ModelRegistry.getInstance(context)
+    private val localAIOrchestrator = LocalAIOrchestrator(context, inferenceEngineManager)
 
     /**
      * Checks hardware compatibility for a specific model before loading or executing.
@@ -80,39 +79,37 @@ class AIInferenceManager(
     suspend fun generateText(request: AIInferenceRequest): Result<AIInferenceResponse> = withContext(Dispatchers.IO) {
         val startTime = System.currentTimeMillis()
 
-        // 1. Resolve Target Model
         val model = request.targetModel ?: inferenceEngineManager.activeLoadedModel.value
         val availableModels = inferenceEngineManager.loadedModelsPool.value
 
-        // 2. Validate Capability and RAM Presence
         val compatibility = ModelCapabilityDetector.checkCompatibility(model, request.requiredCapability, availableModels)
         if (!compatibility.isCompatible) {
             return@withContext Result.failure(
                 IllegalStateException(
-                    compatibility.errorMessage ?: "Incompatible model selected for ${request.requiredCapability.label}. Recommended: ${compatibility.recommendedAlternative}"
+                    "NO LOCAL MODEL LOADED. ${compatibility.errorMessage ?: "Import a compatible local model and load it before inference."}"
                 )
             )
         }
 
         val activeModel = model ?: availableModels.firstOrNull { ModelCapabilityDetector.detectCapabilities(it).contains(request.requiredCapability) }
             ?: return@withContext Result.failure(
-                IllegalStateException("⚠️ AI Model in RAM Required: No active model loaded in device memory supports ${request.requiredCapability.label}. Please load a model into RAM.")
+                IllegalStateException("NO LOCAL MODEL LOADED. No compatible model is loaded for ${request.requiredCapability.label}.")
             )
-        val engine = inferenceEngineManager.selectEngineForModel(activeModel)
 
-        // Ensure model is loaded in engine
+        val engine = inferenceEngineManager.selectEngineForModel(activeModel)
         if (!engine.isLoaded() || engine.getActiveModel()?.id != activeModel.id) {
-            engine.loadModel(activeModel)
+            val loadResult = inferenceEngineManager.loadModel(activeModel, keepExisting = true)
+            if (!loadResult.first) {
+                return@withContext Result.failure(IllegalStateException("MODEL NOT COMPATIBLE: ${loadResult.second}"))
+            }
         }
 
-        // Build augmented prompt with system instructions if present
         val fullPrompt = if (!request.systemPrompt.isNullOrBlank()) {
             "<|system|>\n${request.systemPrompt}\n<|user|>\n${request.prompt}\n<|assistant|>\n"
         } else {
             request.prompt
         }
 
-        // Execute inference through engine
         try {
             val generatedText = engine.generateText(
                 prompt = fullPrompt,
@@ -138,7 +135,9 @@ class AIInferenceManager(
                 )
             )
         } catch (e: Exception) {
-            return@withContext Result.failure(e)
+            return@withContext Result.failure(
+                IllegalStateException("INFERENCE_FAILED: ${e.message ?: "Local inference encountered an error."}")
+            )
         }
     }
 
@@ -151,24 +150,23 @@ class AIInferenceManager(
 
         val compatibility = ModelCapabilityDetector.checkCompatibility(model, request.requiredCapability, availableModels)
         if (!compatibility.isCompatible) {
-            emit("⚠️ [Model Incompatible] ${compatibility.errorMessage}\n\nPlease select ${compatibility.recommendedAlternative} to proceed.")
+            emit("NO LOCAL MODEL LOADED. ${compatibility.errorMessage ?: "Load a compatible local model first."}")
             return@flow
         }
 
-        val activeModel = model ?: com.example.data.AiModelEntity(
-            id = "builtin_neural_engine",
-            name = "On-Device Neural Engine",
-            description = "Built-in hardware accelerated neural synthesis engine",
-            format = "LITERET",
-            modelType = "TEXT",
-            sizeBytes = 256_000_000L,
-            ramRequiredMb = 384,
-            isDownloaded = true,
-            downloadState = "AVAILABLE"
-        )
+        val activeModel = model ?: availableModels.firstOrNull { ModelCapabilityDetector.detectCapabilities(it).contains(request.requiredCapability) }
+            ?: run {
+                emit("NO LOCAL MODEL LOADED. No compatible model is loaded for ${request.requiredCapability.label}.")
+                return@flow
+            }
+
         val engine = inferenceEngineManager.selectEngineForModel(activeModel)
-        if (!engine.isLoaded()) {
-            engine.loadModel(activeModel)
+        if (!engine.isLoaded() || engine.getActiveModel()?.id != activeModel.id) {
+            val loadResult = inferenceEngineManager.loadModel(activeModel, keepExisting = true)
+            if (!loadResult.first) {
+                emit("MODEL NOT COMPATIBLE: ${loadResult.second}")
+                return@flow
+            }
         }
 
         val fullPrompt = if (!request.systemPrompt.isNullOrBlank()) {
