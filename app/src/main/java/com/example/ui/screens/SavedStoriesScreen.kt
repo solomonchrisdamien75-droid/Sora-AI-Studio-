@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -39,7 +40,7 @@ fun SavedStoriesScreen(
     onStorySelected: (StoryProjectEntity) -> Unit = {},
     onBack: () -> Unit = {}
 ) {
-    val allStories by viewModel.repository.storyProjectDao.getAllStoryProjects().collectAsStateWithLifecycle(initial = emptyList())
+    val allStories by viewModel.repository.storyProjectDao.getAllStoryProjects().collectAsStateWithLifecycle(initialValue = emptyList())
     val coroutineScope = rememberCoroutineScope()
     
     var showDeleteConfirmation by remember { mutableStateOf(false) }
@@ -447,7 +448,7 @@ fun StoryDetailsDialog(
 @Composable
 fun Badge(
     text: String,
-    icon: androidx.compose.material.icons.Icons.Filled? = null,
+    icon: ImageVector? = null,
     backgroundColor: Color = NeonCyan.copy(alpha = 0.15f),
     textColor: Color = NeonCyan
 ) {
