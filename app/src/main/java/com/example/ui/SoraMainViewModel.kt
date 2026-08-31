@@ -29,6 +29,7 @@ import kotlinx.coroutines.launch
 enum class SoraTab(val title: String, val route: String) {
     HOME("Home", "home"),
     STORY_STUDIO("Story Writer", "story_studio"),
+    SAVED_STORIES("Saved Stories", "saved_stories"),
     SCRIPT_STUDIO("Script Writer", "script_studio"),
     VOICE_AI("Voice AI", "voice_ai"),
     MANHWA_STUDIO("Manhwa Studio", "manhwa_studio"),

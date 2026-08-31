@@ -69,6 +69,7 @@ class MainActivity : ComponentActivity() {
                         when (currentTab) {
                             SoraTab.HOME -> HomeScreen(viewModel = viewModel)
                             SoraTab.STORY_STUDIO -> com.example.ui.screens.StoryWriterScreen(viewModel = viewModel, onBack = { viewModel.selectTab(SoraTab.HOME) })
+                            SoraTab.SAVED_STORIES -> com.example.ui.screens.SavedStoriesScreen(viewModel = viewModel, onBack = { viewModel.selectTab(SoraTab.STORY_STUDIO) })
                             SoraTab.SCRIPT_STUDIO -> com.example.ui.screens.ScriptWriterScreen(viewModel = viewModel, onBack = { viewModel.selectTab(SoraTab.HOME) })
                             SoraTab.VOICE_AI -> com.example.ui.screens.VoiceAIScreen(viewModel = viewModel, onBack = { viewModel.selectTab(SoraTab.HOME) })
                             SoraTab.MANHWA_STUDIO -> com.example.manhwa.ui.ManhwaStudioScreen(viewModel = viewModel)

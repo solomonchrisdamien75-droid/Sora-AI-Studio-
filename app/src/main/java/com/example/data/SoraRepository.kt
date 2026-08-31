@@ -37,6 +37,7 @@ class SoraRepository(
     val soraCloudDao = db.soraCloudDao()
     val galleryDao = db.galleryDao()
     val quantizationHistoryDao = db.quantizationHistoryDao()
+    val storyProjectDao = db.storyProjectDao()
 
     val hardwareDetector = HardwareDetector(context)
     val deviceStorageManager = com.example.ai.hardware.DeviceStorageManager(context)
