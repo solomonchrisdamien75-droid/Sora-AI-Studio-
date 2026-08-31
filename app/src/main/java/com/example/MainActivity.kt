@@ -153,6 +153,7 @@ fun getTabIcon(tab: SoraTab): ImageVector {
     return when (tab) {
         SoraTab.HOME -> Icons.Default.Home
         SoraTab.STORY_STUDIO -> Icons.Default.AutoStories
+        SoraTab.SAVED_STORIES -> Icons.Default.Bookmark
         SoraTab.SCRIPT_STUDIO -> Icons.Default.ViewStream
         SoraTab.VOICE_AI -> Icons.Default.RecordVoiceOver
         SoraTab.MANHWA_STUDIO -> Icons.Default.AutoAwesome
@@ -168,5 +169,7 @@ fun getTabIcon(tab: SoraTab): ImageVector {
         SoraTab.ASSISTANT -> Icons.Default.Psychology
         SoraTab.SORA_CLOUD -> Icons.Default.Cloud
         SoraTab.SETTINGS -> Icons.Default.Settings
+        // Defensive fallback (shouldn't be needed with exhaustive enum handling)
+        // else -> Icons.Default.Help
     }
 }
